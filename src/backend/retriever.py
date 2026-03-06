@@ -164,27 +164,25 @@ class DocumentRetriever:
         return results
     
     def get_stats(self) -> Dict:
-        """Get database statistics with optimized single query."""
+        """Get database statistics with optimized query."""
         conn = self._get_db_connection()
         cursor = conn.cursor()
         
         try:
-            # Single optimized query for all stats
+            # Optimized query combining multiple aggregations
             cursor.execute("""
-                SELECT 
-                    COUNT(*) as total_chunks,
-                    COUNT(DISTINCT doc_id) as total_docs,
-                    COUNT(DISTINCT ticker) as total_tickers,
-                    json_object_agg(filing_type, doc_count) as by_filing_type
-                FROM (
+                WITH doc_stats AS (
                     SELECT 
-                        doc_id, 
-                        ticker, 
                         filing_type,
-                        COUNT(*) OVER (PARTITION BY filing_type) as doc_count
+                        COUNT(DISTINCT doc_id) as doc_count
                     FROM document_chunks
-                    GROUP BY doc_id, ticker, filing_type
-                ) subq
+                    GROUP BY filing_type
+                )
+                SELECT 
+                    (SELECT COUNT(*) FROM document_chunks) as total_chunks,
+                    (SELECT COUNT(DISTINCT doc_id) FROM document_chunks) as total_docs,
+                    (SELECT COUNT(DISTINCT ticker) FROM document_chunks) as total_tickers,
+                    (SELECT json_object_agg(filing_type, doc_count) FROM doc_stats) as by_filing_type
             """)
             
             row = cursor.fetchone()

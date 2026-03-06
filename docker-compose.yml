@@ -73,7 +73,7 @@ services:
       - "${STREAMLIT_PORT:-8501}:8501"
     depends_on:
       - api
-    command: streamlit run src/frontend/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+    command: streamlit run src/frontend/Chat.py --server.port 8501 --server.address 0.0.0.0
 
 volumes:
   postgres_data:
