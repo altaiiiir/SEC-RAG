@@ -20,6 +20,13 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: edgar_ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     volumes:
       - ollama_data:/root/.ollama
     ports:
