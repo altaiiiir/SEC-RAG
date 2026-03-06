@@ -1,0 +1,24 @@
+[project]
+name = "sec-rag"
+version = "0.1.0"
+description = "RAG system for SEC EDGAR filings"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "streamlit>=1.40.0",
+    "sentence-transformers>=3.3.0",
+    "psycopg2-binary>=2.9.10",
+    "pgvector>=0.3.6",
+    "pydantic>=2.10.0",
+    "python-dotenv>=1.0.1",
+    "tiktoken>=0.8.0",
+    "numpy>=2.0.0",
+    "requests>=2.32.0",
+    "pytest>=8.3.0",
+    "pytest-cov>=6.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

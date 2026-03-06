@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: edgar_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-edgar_rag}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: edgar_api
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+    volumes:
+      - ./edgar_corpus:/app/edgar_corpus:ro
+      - ./src:/app/src
+      - model_cache:/root/.cache/huggingface
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: uvicorn src.api:app --host 0.0.0.0 --port 8000 --reload
+
+  streamlit:
+    build: .
+    container_name: edgar_streamlit
+    env_file:
+      - .env
+    environment:
+      API_URL: http://api:8000
+    volumes:
+      - ./src:/app/src
+      - model_cache:/root/.cache/huggingface
+    ports:
+      - "${STREAMLIT_PORT:-8501}:8501"
+    depends_on:
+      - api
+    command: streamlit run src/app.py --server.port 8501 --server.address 0.0.0.0
+
+volumes:
+  postgres_data:
+  model_cache:
