@@ -198,20 +198,19 @@ async def ask(request: AskRequest):
         
         # Build context from results
         context_parts = []
-        for i, result in enumerate(results, 1):
+        for result in results:
             context_parts.append(
-                f"[Document {i}]\n"
-                f"Ticker: {result.ticker}\n"
-                f"Filing: {result.filing_type}\n"
-                f"Date: {result.filing_date}\n"
-                f"Content: {result.content}\n"
+                f"Company: {result.ticker}, Filing: {result.filing_type}, Date: {result.filing_date}\n"
+                f"{result.content}"
             )
         
-        context = "\n\n".join(context_parts)
+        context = "\n\n---\n\n".join(context_parts)
         
         # Create prompt
         prompt = (
-            f"Based on these SEC filings:\n\n{context}\n\n"
+            f"You are a financial analyst assistant. Answer the question based on the SEC filing excerpts below. "
+            f"Provide a direct, concise answer without referencing document numbers or sources - the evidence will be shown separately.\n\n"
+            f"SEC Filing Excerpts:\n{context}\n\n"
             f"Question: {request.query}\n\n"
             f"Answer:"
         )

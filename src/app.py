@@ -16,11 +16,12 @@ st.set_page_config(
 st.markdown("""
 <style>
     .evidence-card {
-        background-color: #f8f9fa;
+        background-color: transparent;
         padding: 0.8rem;
         border-radius: 0.3rem;
         margin-bottom: 0.5rem;
         border-left: 3px solid #0066cc;
+        border: 1px solid rgba(0, 102, 204, 0.2);
     }
     .similarity-badge {
         background-color: #0066cc;
@@ -151,10 +152,6 @@ with st.sidebar:
 # Initialize session state
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
-if 'is_generating' not in st.session_state:
-    st.session_state.is_generating = False
-if 'stop_generation' not in st.session_state:
-    st.session_state.stop_generation = False
 
 # Display chat history
 for message in st.session_state.chat_history:
@@ -173,112 +170,79 @@ for message in st.session_state.chat_history:
                             </div>
                             <span class="similarity-badge">{ev['similarity']*100:.0f}% match</span>
                         </div>
-                        <div style="font-size: 0.9rem; color: #333;">
+                        <div style="font-size: 0.9rem; opacity: 0.8;">
                             {ev['content'][:300]}...
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
 
-# Generate response if we just added a user message
-if st.session_state.is_generating and len(st.session_state.chat_history) > 0:
-    last_message = st.session_state.chat_history[-1]
-    if last_message["role"] == "user":
-        user_query = last_message["content"]
-        
-        # Display user message
-        with st.chat_message("user"):
-            st.markdown(user_query)
-        
-        # Generate assistant response
-        with st.chat_message("assistant"):
-            response_placeholder = st.empty()
-            evidence_placeholder = st.empty()
-            
-            full_response = ""
-            evidence_data = []
-            
-            # Stream the response
-            for chunk in ask_question(
-                query=user_query,
-                top_k=top_k,
-                ticker=ticker_input if ticker_input else None,
-                filing_type=filing_type if filing_type != "All" else None
-            ):
-                # Check if user stopped generation
-                if st.session_state.stop_generation:
-                    response_placeholder.markdown(full_response + "\n\n*[Response stopped by user]*")
-                    st.session_state.is_generating = False
-                    st.session_state.stop_generation = False
-                    break
-                
-                if chunk['type'] == 'content':
-                    full_response += chunk['data']
-                    response_placeholder.markdown(full_response + "▌")
-                elif chunk['type'] == 'done':
-                    evidence_data = chunk['evidence']
-                    response_placeholder.markdown(full_response)
-                    st.session_state.is_generating = False
-                    break
-                elif chunk['type'] == 'error':
-                    response_placeholder.error(chunk['message'])
-                    st.session_state.is_generating = False
-                    break
-            
-            # Display evidence
-            if evidence_data:
-                with evidence_placeholder.expander("📄 Evidence", expanded=False):
-                    for i, ev in enumerate(evidence_data, 1):
-                        st.markdown(f"""
-                        <div class="evidence-card">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                                <div>
-                                    <strong>{ev['ticker']}</strong> | {ev['filing_type']} | {ev['filing_date'] or 'N/A'}
-                                </div>
-                                <span class="similarity-badge">{ev['similarity']*100:.0f}% match</span>
-                            </div>
-                            <div style="font-size: 0.9rem; color: #333;">
-                                {ev['content'][:300]}...
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-            
-            # Add assistant response to chat history if not stopped
-            if not st.session_state.stop_generation and full_response:
-                st.session_state.chat_history.append({
-                    "role": "assistant",
-                    "content": full_response,
-                    "evidence": evidence_data
-                })
-        
-        # Reset generation state and rerun to show input again
-        if not st.session_state.is_generating:
-            st.rerun()
-
-# Chat input with custom send/stop button
-col1, col2 = st.columns([6, 1])
-with col1:
-    prompt = st.text_input(
-        "Message",
-        key="chat_input",
-        placeholder="Ask a question about SEC filings...",
-        label_visibility="collapsed",
-        disabled=st.session_state.is_generating
-    )
-with col2:
-    if st.session_state.is_generating:
-        if st.button("⏸️ Stop", use_container_width=True, type="secondary"):
-            st.session_state.stop_generation = True
-    else:
-        send_button = st.button("Send", use_container_width=True, type="primary")
-
-# Process message when send is clicked
-if not st.session_state.is_generating and prompt and ('send_button' in locals() and send_button):
-    st.session_state.is_generating = True
-    st.session_state.stop_generation = False
-    
+# Chat input
+if prompt := st.chat_input("Ask a question about SEC filings..."):
     # Add user message to chat history
     st.session_state.chat_history.append({"role": "user", "content": prompt})
-    st.rerun()
+    
+    # Display user message
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    
+    # Generate and display assistant response
+    with st.chat_message("assistant"):
+        response_placeholder = st.empty()
+        evidence_placeholder = st.empty()
+        
+        full_response = ""
+        evidence_data = []
+        
+        # Show status while processing
+        status_container = st.empty()
+        with status_container:
+            with st.status("Thinking...", expanded=True) as status:
+                pass
+        
+        # Stream the response
+        for chunk in ask_question(
+            query=prompt,
+            top_k=top_k,
+            ticker=ticker_input if ticker_input else None,
+            filing_type=filing_type if filing_type != "All" else None
+        ):
+            if chunk['type'] == 'content':
+                full_response += chunk['data']
+                response_placeholder.markdown(full_response + "▌")
+            elif chunk['type'] == 'done':
+                evidence_data = chunk['evidence']
+                response_placeholder.markdown(full_response)
+                status_container.empty()  # Remove status completely
+                break
+            elif chunk['type'] == 'error':
+                response_placeholder.error(chunk['message'])
+                status_container.empty()  # Remove status completely
+                break
+        
+        # Display evidence
+        if evidence_data:
+            with evidence_placeholder.expander("📄 Evidence", expanded=False):
+                for i, ev in enumerate(evidence_data, 1):
+                    st.markdown(f"""
+                    <div class="evidence-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <div>
+                                <strong>{ev['ticker']}</strong> | {ev['filing_type']} | {ev['filing_date'] or 'N/A'}
+                            </div>
+                            <span class="similarity-badge">{ev['similarity']*100:.0f}% match</span>
+                        </div>
+                        <div style="font-size: 0.9rem; opacity: 0.8;">
+                            {ev['content'][:300]}...
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        # Add assistant response to chat history
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": full_response,
+            "evidence": evidence_data
+        })
 
 # Clear chat button
 if st.sidebar.button("🗑️ Clear Chat", use_container_width=True):
