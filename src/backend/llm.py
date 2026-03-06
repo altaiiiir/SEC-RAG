@@ -1,7 +1,7 @@
 import os
 import json
 import httpx
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, Dict
 
 
 class OllamaClient:
@@ -13,6 +13,39 @@ class OllamaClient:
         self.port = port or int(os.getenv("OLLAMA_PORT", "11434"))
         self.model = model or os.getenv("OLLAMA_MODEL", "qwen3.5:4b")
         self.base_url = f"http://{self.host}:{self.port}"
+        self.system_prompt_config = self._load_system_prompt()
+    
+    def _load_system_prompt(self) -> Dict:
+        """Load system prompt configuration from JSON file specified in environment."""
+        prompt_path = os.getenv("SYSTEM_PROMPT_PATH", "prompts/system_prompt.json")
+        
+        try:
+            if not os.path.isabs(prompt_path):
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                prompt_path = os.path.join(project_root, prompt_path)
+            
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                return config
+        except FileNotFoundError:
+            raise RuntimeError(f"System prompt file not found: {prompt_path}")
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Invalid JSON in system prompt file: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Error loading system prompt: {e}")
+    
+    def format_prompt(self, context: str, query: str) -> str:
+        """Format the prompt template with context and query."""
+        template = self.system_prompt_config.get("prompt_template", "")
+        return template.format(context=context, query=query)
+    
+    def get_prompt_metadata(self) -> Dict:
+        """Get metadata about the current system prompt."""
+        return {
+            "version": self.system_prompt_config.get("version", "unknown"),
+            "metadata": self.system_prompt_config.get("metadata", {}),
+            "config": self.system_prompt_config.get("config", {})
+        }
     
     async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
         """Generate streaming response from Ollama."""

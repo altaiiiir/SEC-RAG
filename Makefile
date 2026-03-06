@@ -10,6 +10,8 @@ endif
 API_PORT ?= 8000
 STREAMLIT_PORT ?= 8501
 API_HOST ?= localhost
+POSTGRES_USER ?= postgres
+POSTGRES_DB ?= edgar_rag
 
 # Default target
 help:
@@ -94,9 +96,11 @@ clear:
 clear-db:
 	@echo "WARNING: This will drop all data and schema from the database!"
 	@echo "Dropping database schema and data..."
-	@docker-compose exec -T db psql -U postgres -d edgar_rag -c "DROP TABLE IF EXISTS document_chunks CASCADE; DROP EXTENSION IF EXISTS vector CASCADE;"
+	@docker-compose exec -T postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DROP TABLE IF EXISTS document_chunks CASCADE; DROP EXTENSION IF EXISTS vector CASCADE;"
 	@echo "Database cleared!"
-	@echo "To reinitialize the schema, run: docker-compose exec -T db psql -U postgres -d edgar_rag < init.sql"
+	@echo "Reinitializing database schema..."
+	@docker-compose exec -T postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -f /docker-entrypoint-initdb.d/init.sql
+	@echo "Database reinitialized successfully!"
 
 # Check health
 health:

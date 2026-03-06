@@ -155,13 +155,7 @@ async def ask(request: QueryRequest):
             for r in results
         ])
         
-        prompt = (
-            f"You are a financial analyst assistant. Answer the question based on the SEC filing excerpts below. "
-            f"Provide a direct, concise answer without referencing document numbers or sources - the evidence will be shown separately.\n\n"
-            f"SEC Filing Excerpts:\n{context}\n\n"
-            f"Question: {request.query}\n\n"
-            f"Answer:"
-        )
+        prompt = llm_client.format_prompt(context=context, query=request.query)
         
         # Include all metadata in evidence
         evidence_list = [Evidence(**{

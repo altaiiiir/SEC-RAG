@@ -190,7 +190,6 @@ SEC-RAG/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── init.sql                     # Database schema
-├── migrate_schema.sql           # Schema migration (NEW)
 ├── Makefile
 ├── CHUNKING_EXPERIMENTS.md      # Experiment log (NEW)
 └── pyproject.toml               # UV dependencies
