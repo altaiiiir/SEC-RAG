@@ -40,7 +40,8 @@ CREATE INDEX idx_ticker_filing ON document_chunks(ticker, filing_type);
 
 -- Create indexes for metadata columns
 CREATE INDEX idx_chunk_type ON document_chunks(chunk_type);
-CREATE INDEX idx_section_name ON document_chunks(section_name);
+-- Removed idx_section_name - section names can be very long and exceed B-tree index limit
+-- Section filtering is done in application layer or with WHERE clauses (still fast with other indexes)
 CREATE INDEX idx_table_id ON document_chunks(table_id);
 
 -- Create vector similarity search index using HNSW

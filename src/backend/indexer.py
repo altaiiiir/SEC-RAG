@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List, Dict, Optional
 import re
 import json
+import psycopg2
 from psycopg2 import pool
 from psycopg2.extras import execute_batch
 from sentence_transformers import SentenceTransformer
@@ -66,6 +67,24 @@ class DocumentIndexer:
         """Index a single document file with batch inserts."""
         metadata = self._parse_filename(filepath.name)
         doc_id = filepath.stem
+        
+        # Check if document already exists (use direct connection to avoid pool issues in multiprocessing)
+        import psycopg2
+        try:
+            check_conn = psycopg2.connect(**self.db_config)
+            check_cursor = check_conn.cursor()
+            check_cursor.execute("SELECT COUNT(*) FROM document_chunks WHERE doc_id = %s", (doc_id,))
+            existing_count = check_cursor.fetchone()[0]
+            check_cursor.close()
+            check_conn.close()
+            
+            if existing_count > 0:
+                print(f"Skipping {filepath.name} (already indexed with {existing_count} chunks)")
+                return 0
+        except Exception as e:
+            print(f"Warning: Could not check for duplicates: {e}")
+            # Continue anyway
+        
         print(f"Indexing {filepath.name}...")
 
         with open(filepath, "r", encoding="utf-8") as f:
@@ -147,7 +166,7 @@ class DocumentIndexer:
 
         print(f"Indexing {len(txt_files)} documents (parallel={parallel})...")
 
-        stats = {"total_docs": len(txt_files), "total_chunks": 0, "successful": 0, "failed": 0}
+        stats = {"total_docs": len(txt_files), "total_chunks": 0, "successful": 0, "failed": 0, "skipped": 0}
 
         if parallel and len(txt_files) > 1:
             max_workers = min(os.cpu_count() or 4, len(txt_files))
@@ -157,8 +176,11 @@ class DocumentIndexer:
                     filepath = futures[future]
                     try:
                         chunks_inserted = future.result()
-                        stats["total_chunks"] += chunks_inserted
-                        stats["successful"] += 1
+                        if chunks_inserted == 0:
+                            stats["skipped"] += 1
+                        else:
+                            stats["total_chunks"] += chunks_inserted
+                            stats["successful"] += 1
                     except Exception as e:
                         print(f"Failed to index {filepath.name}: {e}")
                         stats["failed"] += 1
@@ -166,8 +188,11 @@ class DocumentIndexer:
             for filepath in txt_files:
                 try:
                     chunks_inserted = self.index_document(filepath)
-                    stats["total_chunks"] += chunks_inserted
-                    stats["successful"] += 1
+                    if chunks_inserted == 0:
+                        stats["skipped"] += 1
+                    else:
+                        stats["total_chunks"] += chunks_inserted
+                        stats["successful"] += 1
                 except Exception as e:
                     print(f"Failed to index {filepath.name}: {e}")
                     stats["failed"] += 1
@@ -209,5 +234,6 @@ if __name__ == "__main__":
     print("=" * 50)
     print(f"Total documents: {stats['total_docs']}")
     print(f"Successful: {stats['successful']}")
+    print(f"Skipped: {stats['skipped']}")
     print(f"Failed: {stats['failed']}")
     print(f"Total chunks: {stats['total_chunks']}")

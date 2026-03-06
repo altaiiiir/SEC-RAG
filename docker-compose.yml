@@ -48,6 +48,7 @@ services:
     volumes:
       - ./edgar_corpus:/app/edgar_corpus:ro
       - ./src:/app/src
+      - ./prompts:/app/prompts:ro
       - model_cache:/root/.cache/huggingface
     ports:
       - "${API_PORT:-8000}:8000"
@@ -68,6 +69,7 @@ services:
       PYTHONPATH: /app
     volumes:
       - ./src:/app/src
+      - ./prompts:/app/prompts:ro
       - model_cache:/root/.cache/huggingface
     ports:
       - "${STREAMLIT_PORT:-8501}:8501"

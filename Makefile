@@ -151,7 +151,7 @@ pull-model:
 # Check Ollama models
 check-ollama:
 	@echo "Installed Ollama models:"
-	@docker exec edgar_ollama ollama list | grep $(OLLAMA_MODEL)
+	@docker exec edgar_ollama ollama list
 
 # Evaluate chunking
 evaluate:
