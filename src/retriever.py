@@ -1,11 +1,8 @@
-import os
 from typing import List, Dict, Optional
 import psycopg2
 from sentence_transformers import SentenceTransformer
-from dotenv import load_dotenv
 
-load_dotenv()
-
+from src.db_config import get_db_config, get_embedding_model_name
 
 class SearchResult:
     """A single search result with metadata."""
@@ -38,15 +35,8 @@ class DocumentRetriever:
     """Retrieves relevant document chunks using vector similarity search."""
     
     def __init__(self):
-        self.db_config = {
-            "host": os.getenv("POSTGRES_HOST", "localhost"),
-            "port": os.getenv("POSTGRES_PORT", "5432"),
-            "database": os.getenv("POSTGRES_DB", "edgar_rag"),
-            "user": os.getenv("POSTGRES_USER", "postgres"),
-            "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
-        }
-        
-        self.embedding_model_name = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+        self.db_config = get_db_config()
+        self.embedding_model_name = get_embedding_model_name()
         self.model = SentenceTransformer(self.embedding_model_name)
     
     def _get_db_connection(self):

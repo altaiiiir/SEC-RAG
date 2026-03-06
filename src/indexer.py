@@ -1,31 +1,22 @@
-import os
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 import re
 import json
-from datetime import datetime
 import psycopg2
 from sentence_transformers import SentenceTransformer
 import tiktoken
-from dotenv import load_dotenv
 
-load_dotenv()
+from src.db_config import get_db_config, get_embedding_model_name, get_chunk_config
 
 class DocumentIndexer:
     """Indexes SEC EDGAR documents into pgvector database."""
     
     def __init__(self):
-        self.db_config = {
-            "host": os.getenv("POSTGRES_HOST", "localhost"),
-            "port": os.getenv("POSTGRES_PORT", "5432"),
-            "database": os.getenv("POSTGRES_DB", "edgar_rag"),
-            "user": os.getenv("POSTGRES_USER", "postgres"),
-            "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
-        }
-        
-        self.embedding_model_name = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-        self.chunk_size = int(os.getenv("CHUNK_SIZE", "512"))
-        self.chunk_overlap = int(os.getenv("CHUNK_OVERLAP", "50"))
+        self.db_config = get_db_config()
+        self.embedding_model_name = get_embedding_model_name()
+        chunk_config = get_chunk_config()
+        self.chunk_size = chunk_config["size"]
+        self.chunk_overlap = chunk_config["overlap"]
         
         print(f"Loading embedding model: {self.embedding_model_name}")
         self.model = SentenceTransformer(self.embedding_model_name)

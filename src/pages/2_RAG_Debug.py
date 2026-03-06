@@ -1,59 +1,26 @@
 import streamlit as st
 import requests
 import os
-from typing import Optional
+import sys
 
-# Configuration
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-st.set_page_config(
-    page_title="SEC EDGAR RAG Debug",
-    page_icon="🔍",
-    layout="wide",
-)
+from streamlit_utils import API_URL, render_sidebar
 
-# Custom CSS for better styling
+st.set_page_config(page_title="SEC EDGAR RAG Debug", page_icon="🔍", layout="wide")
+
 st.markdown("""
 <style>
-    .result-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin-bottom: 1rem;
-    }
     .similarity-score {
         color: #0066cc;
         font-weight: bold;
-    }
-    .metadata {
-        color: #666;
-        font-size: 0.9rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
 
-def check_api_health():
-    """Check if API is healthy."""
-    try:
-        response = requests.get(f"{API_URL}/health", timeout=5)
-        return response.status_code == 200
-    except:
-        return False
-
-
-def get_stats():
-    """Get database statistics."""
-    try:
-        response = requests.get(f"{API_URL}/stats", timeout=5)
-        if response.status_code == 200:
-            return response.json()
-    except:
-        pass
-    return None
-
-
-def search_documents(query: str, top_k: int, ticker: Optional[str], filing_type: Optional[str]):
+def search_documents(query: str, top_k: int, ticker: str = None, filing_type: str = None):
     """Search documents via API."""
     try:
         payload = {
@@ -82,22 +49,9 @@ st.markdown("Raw vector search results for debugging and testing")
 
 # Sidebar
 with st.sidebar:
-    st.header("⚙️ Settings")
+    stats = render_sidebar()
     
-    # API health check
-    if check_api_health():
-        st.success("✅ API Connected")
-    else:
-        st.error("❌ API Unavailable")
-        st.stop()
-    
-    # Database stats
-    stats = get_stats()
     if stats:
-        st.metric("Documents", stats["total_documents"])
-        st.metric("Chunks", f"{stats['total_chunks']:,}")
-        st.metric("Companies", stats["total_tickers"])
-        
         with st.expander("Filing Types"):
             for filing_type, count in stats.get("by_filing_type", {}).items():
                 st.write(f"**{filing_type}**: {count} documents")
@@ -193,17 +147,5 @@ if search_button and query:
 elif search_button and not query:
     st.warning("Please enter a search query")
 
-# Example queries
-with st.expander("💡 Example Queries"):
-    st.markdown("""
-    - What was Apple's revenue in 2024?
-    - What are Tesla's main risk factors?
-    - How much did Microsoft spend on R&D?
-    - What is Amazon's operating income?
-    - Describe Google's competitive landscape
-    - What are Nvidia's AI chip capabilities?
-    """)
-
 # Footer
 st.divider()
-st.caption("SEC EDGAR RAG System | Built with FastAPI, Streamlit, and pgvector")

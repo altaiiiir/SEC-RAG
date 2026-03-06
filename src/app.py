@@ -2,57 +2,18 @@ import streamlit as st
 import requests
 import json
 import os
+import sys
 
-# Configuration
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-st.set_page_config(
-    page_title="SEC EDGAR Chat",
-    page_icon="💬",
-    layout="wide",
+from streamlit_utils import (
+    API_URL, check_api_health, get_stats, render_sidebar, 
+    get_common_css, render_evidence_card
 )
 
-# Custom CSS
-st.markdown("""
-<style>
-    .evidence-card {
-        background-color: transparent;
-        padding: 0.8rem;
-        border-radius: 0.3rem;
-        margin-bottom: 0.5rem;
-        border-left: 3px solid #0066cc;
-        border: 1px solid rgba(0, 102, 204, 0.2);
-    }
-    .similarity-badge {
-        background-color: #0066cc;
-        color: white;
-        padding: 0.2rem 0.5rem;
-        border-radius: 0.3rem;
-        font-size: 0.8rem;
-        font-weight: bold;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-
-def check_api_health():
-    """Check if API is healthy."""
-    try:
-        response = requests.get(f"{API_URL}/health", timeout=5)
-        return response.status_code == 200
-    except:
-        return False
-
-
-def get_stats():
-    """Get database statistics."""
-    try:
-        response = requests.get(f"{API_URL}/stats", timeout=5)
-        if response.status_code == 200:
-            return response.json()
-    except:
-        pass
-    return None
+st.set_page_config(page_title="SEC EDGAR Chat", page_icon="💬", layout="wide")
+st.markdown(get_common_css(), unsafe_allow_html=True)
 
 
 def ask_question(query: str, top_k: int, ticker: str = None, filing_type: str = None):
@@ -108,22 +69,7 @@ st.header("SECRAG Chat")
 
 # Sidebar
 with st.sidebar:
-    st.header("⚙️ Settings")
-    
-    # API health check
-    if check_api_health():
-        st.success("✅ API Connected")
-    else:
-        st.error("❌ API Unavailable")
-        st.stop()
-    
-    # Database stats
-    stats = get_stats()
-    if stats:
-        st.metric("Documents", stats["total_documents"])
-        st.metric("Chunks", f"{stats['total_chunks']:,}")
-        st.metric("Companies", stats["total_tickers"])
-    
+    stats = render_sidebar()
     st.divider()
     
     # Search filters
@@ -161,20 +107,8 @@ for message in st.session_state.chat_history:
         # Display evidence if available
         if message["role"] == "assistant" and "evidence" in message:
             with st.expander("📄 Evidence", expanded=False):
-                for i, ev in enumerate(message["evidence"], 1):
-                    st.markdown(f"""
-                    <div class="evidence-card">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                            <div>
-                                <strong>{ev['ticker']}</strong> | {ev['filing_type']} | {ev['filing_date'] or 'N/A'}
-                            </div>
-                            <span class="similarity-badge">{ev['similarity']*100:.0f}% match</span>
-                        </div>
-                        <div style="font-size: 0.9rem; opacity: 0.8;">
-                            {ev['content'][:300]}...
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                for ev in message["evidence"]:
+                    st.markdown(render_evidence_card(ev), unsafe_allow_html=True)
 
 # Chat input
 if prompt := st.chat_input("Ask a question about SEC filings..."):
@@ -222,20 +156,8 @@ if prompt := st.chat_input("Ask a question about SEC filings..."):
         # Display evidence
         if evidence_data:
             with evidence_placeholder.expander("📄 Evidence", expanded=False):
-                for i, ev in enumerate(evidence_data, 1):
-                    st.markdown(f"""
-                    <div class="evidence-card">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                            <div>
-                                <strong>{ev['ticker']}</strong> | {ev['filing_type']} | {ev['filing_date'] or 'N/A'}
-                            </div>
-                            <span class="similarity-badge">{ev['similarity']*100:.0f}% match</span>
-                        </div>
-                        <div style="font-size: 0.9rem; opacity: 0.8;">
-                            {ev['content'][:300]}...
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                for ev in evidence_data:
+                    st.markdown(render_evidence_card(ev), unsafe_allow_html=True)
         
         # Add assistant response to chat history
         st.session_state.chat_history.append({
