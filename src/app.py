@@ -93,7 +93,8 @@ def ask_question(query: str, top_k: int, ticker: str = None, filing_type: str = 
                             elif data['type'] == 'done':
                                 yield {'type': 'done', 'evidence': evidence_data}
                                 break
-                        except json.JSONDecodeError:
+                        except (json.JSONDecodeError, KeyError) as e:
+                            logger.error(f"Error decoding JSON: {line_str} - {e}")
                             continue
         else:
             yield {'type': 'error', 'message': f"API error: {response.status_code}"}
@@ -103,8 +104,7 @@ def ask_question(query: str, top_k: int, ticker: str = None, filing_type: str = 
 
 
 # Main UI
-st.title("💬 Ask SEC EDGAR")
-st.markdown("Chat with SEC filings using AI-powered answers backed by real evidence")
+st.header("SECRAG Chat")
 
 # Sidebar
 with st.sidebar:
@@ -240,18 +240,3 @@ if prompt := st.chat_input("Ask a question about SEC filings..."):
 if st.sidebar.button("🗑️ Clear Chat", use_container_width=True):
     st.session_state.chat_history = []
     st.rerun()
-
-# Example queries
-with st.expander("💡 Example Questions"):
-    st.markdown("""
-    - What was Apple's revenue in 2024?
-    - What are Tesla's main risk factors?
-    - How much did Microsoft spend on R&D?
-    - What is Amazon's operating income?
-    - Describe Google's competitive landscape
-    - What are Nvidia's AI chip capabilities?
-    """)
-
-# Footer
-st.divider()
-st.caption("SEC EDGAR RAG System | Built with FastAPI, Streamlit, Ollama, and pgvector")

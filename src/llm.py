@@ -1,6 +1,6 @@
 import os
 import json
-import requests
+import httpx
 from typing import AsyncGenerator, Optional
 
 
@@ -16,7 +16,7 @@ class OllamaClient:
         """Initialize Ollama client with configuration from environment or parameters."""
         self.host = host or os.getenv("OLLAMA_HOST", "ollama")
         self.port = port or int(os.getenv("OLLAMA_PORT", "11434"))
-        self.model = model or os.getenv("OLLAMA_MODEL", "qwen2.5:4b")
+        self.model = model or os.getenv("OLLAMA_MODEL", "qwen3.5:4b")
         self.base_url = f"http://{self.host}:{self.port}"
     
     async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
@@ -37,29 +37,30 @@ class OllamaClient:
         }
         
         try:
-            # Use requests with stream=True for streaming response
-            response = requests.post(url, json=payload, stream=True, timeout=120)
-            response.raise_for_status()
-            
-            for line in response.iter_lines():
-                if line:
-                    try:
-                        chunk = json.loads(line.decode('utf-8'))
-                        if 'response' in chunk:
-                            yield chunk['response']
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                async with client.stream('POST', url, json=payload) as response:
+                    response.raise_for_status()
+                    
+                    async for line in response.aiter_lines():
+                        if line:
+                            try:
+                                chunk = json.loads(line)
+                                if 'response' in chunk:
+                                    yield chunk['response']
+                                
+                                # Stop if done
+                                if chunk.get('done', False):
+                                    break
+                            except json.JSONDecodeError:
+                                continue
                         
-                        # Stop if done
-                        if chunk.get('done', False):
-                            break
-                    except json.JSONDecodeError:
-                        continue
-                        
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             raise RuntimeError(f"Failed to connect to Ollama: {e}")
     
     def check_health(self) -> bool:
         """Check if Ollama service is healthy."""
         try:
+            import requests
             response = requests.get(f"{self.base_url}/api/tags", timeout=5)
             return response.status_code == 200
         except:
@@ -80,6 +81,7 @@ class OllamaClient:
         payload = {"name": model_name, "stream": False}
         
         try:
+            import requests
             response = requests.post(url, json=payload, timeout=600)
             return response.status_code == 200
         except:
