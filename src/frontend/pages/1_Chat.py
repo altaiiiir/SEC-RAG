@@ -1,18 +1,13 @@
 import streamlit as st
 import requests
 import json
-import os
-import sys
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from streamlit_utils import (
+from src.frontend.utils import (
     API_URL, check_api_health, get_stats, render_sidebar, 
     get_common_css, render_evidence_card
 )
 
-st.set_page_config(page_title="SEC EDGAR Chat", page_icon="💬", layout="wide")
+st.set_page_config(page_title="SECRAG Chat", page_icon="💬", layout="wide")
 st.markdown(get_common_css(), unsafe_allow_html=True)
 
 

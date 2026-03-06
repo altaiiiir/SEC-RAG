@@ -42,7 +42,7 @@ help:
 	@echo "  make build       - Build containers"
 	@echo "  make clean       - Stop and remove containers"
 	@echo "  make reset       - Full reset (clean + start services)"
-	@echo "  make pull-model  - Pull Ollama model (qwen2.5:4b)"
+	@echo "  make pull-model  - Pull Ollama model ($(OLLAMA_MODEL))"
 	@echo ""
 	@echo "Quick Start:"
 	@echo "  1. make setup"
@@ -129,12 +129,12 @@ reset: clean setup
 
 # Pull Ollama model
 pull-model:
-	@echo "Pulling Ollama model (qwen3.5:4b)..."
-	@echo "This may take a few minutes (model is ~2.7GB)..."
-	docker exec edgar_ollama ollama pull qwen3.5:4b
+	@echo "Pulling Ollama model..."
+	@echo "This may take a few minutes..."
+	docker exec edgar_ollama ollama pull $(OLLAMA_MODEL)
 	@echo "Model pulled successfully!"
 
 # Check Ollama models
 check-ollama:
 	@echo "Installed Ollama models:"
-	@docker exec edgar_ollama ollama list
+	@docker exec edgar_ollama ollama list | grep $(OLLAMA_MODEL)

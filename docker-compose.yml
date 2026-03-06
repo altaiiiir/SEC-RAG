@@ -44,6 +44,7 @@ services:
       - .env
     environment:
       POSTGRES_HOST: postgres
+      PYTHONPATH: /app
     volumes:
       - ./edgar_corpus:/app/edgar_corpus:ro
       - ./src:/app/src
@@ -55,7 +56,7 @@ services:
         condition: service_healthy
       ollama:
         condition: service_healthy
-    command: uvicorn src.api:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn src.backend.api:app --host 0.0.0.0 --port 8000 --reload
 
   streamlit:
     build: .
@@ -64,6 +65,7 @@ services:
       - .env
     environment:
       API_URL: http://api:8000
+      PYTHONPATH: /app
     volumes:
       - ./src:/app/src
       - model_cache:/root/.cache/huggingface
@@ -71,7 +73,7 @@ services:
       - "${STREAMLIT_PORT:-8501}:8501"
     depends_on:
       - api
-    command: streamlit run src/app.py --server.port 8501 --server.address 0.0.0.0
+    command: streamlit run src/frontend/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
 
 volumes:
   postgres_data:

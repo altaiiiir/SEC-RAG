@@ -24,7 +24,7 @@ class TestFilenameParser:
             'sentence_transformers': Mock(),
             'tiktoken': Mock(),
         }):
-            from src.indexer import DocumentIndexer
+            from src.backend.indexer import DocumentIndexer
             indexer = DocumentIndexer()
             metadata = indexer._parse_filename("AAPL_10K_2024Q3_2024-11-01_full.txt")
             
@@ -40,7 +40,7 @@ class TestFilenameParser:
             'sentence_transformers': Mock(),
             'tiktoken': Mock(),
         }):
-            from src.indexer import DocumentIndexer
+            from src.backend.indexer import DocumentIndexer
             indexer = DocumentIndexer()
             metadata = indexer._parse_filename("TSLA_10K_2026-01-29_full.txt")
             
@@ -56,7 +56,7 @@ class TestFilenameParser:
             'sentence_transformers': Mock(),
             'tiktoken': Mock(),
         }):
-            from src.indexer import DocumentIndexer
+            from src.backend.indexer import DocumentIndexer
             indexer = DocumentIndexer()
             
             # With quarter
@@ -80,7 +80,7 @@ class TestSearchResult:
             'psycopg2': Mock(),
             'sentence_transformers': Mock(),
         }):
-            from src.retriever import SearchResult
+            from src.backend.retriever import SearchResult
             
             result = SearchResult(
                 chunk_id=1,
@@ -103,7 +103,7 @@ class TestSearchResult:
             'psycopg2': Mock(),
             'sentence_transformers': Mock(),
         }):
-            from src.retriever import SearchResult
+            from src.backend.retriever import SearchResult
             
             result = SearchResult(
                 chunk_id=1,
@@ -140,7 +140,7 @@ class TestDatabaseOperations:
                 'sentence_transformers': Mock(),
                 'tiktoken': Mock(),
             }):
-                from src.indexer import DocumentIndexer
+                from src.backend.indexer import DocumentIndexer
                 indexer = DocumentIndexer()
                 
                 assert indexer.db_config['host'] == 'testhost'
@@ -155,7 +155,7 @@ class TestDatabaseOperations:
             'sentence_transformers': Mock(),
             'tiktoken': Mock(),
         }):
-            from src.indexer import DocumentIndexer
+            from src.backend.indexer import DocumentIndexer
             indexer = DocumentIndexer()
             
             # Just verify defaults exist (could be localhost or postgres)
@@ -196,7 +196,7 @@ class TestConstants:
                 'sentence_transformers': Mock(),
                 'tiktoken': Mock(),
             }):
-                from src.indexer import DocumentIndexer
+                from src.backend.indexer import DocumentIndexer
                 indexer = DocumentIndexer()
                 assert indexer.chunk_size == 1024
     
@@ -208,7 +208,7 @@ class TestConstants:
                 'sentence_transformers': Mock(),
                 'tiktoken': Mock(),
             }):
-                from src.indexer import DocumentIndexer
+                from src.backend.indexer import DocumentIndexer
                 indexer = DocumentIndexer()
                 assert indexer.chunk_overlap == 100
 
@@ -224,7 +224,7 @@ class TestOllamaClient:
             'OLLAMA_MODEL': 'test-model'
         }):
             with patch.dict('sys.modules', {'httpx': Mock()}):
-                from src.llm import OllamaClient
+                from src.backend.llm import OllamaClient
                 client = OllamaClient()
                 
                 assert client.host == 'test-ollama'
@@ -235,7 +235,7 @@ class TestOllamaClient:
     def test_default_model(self):
         """Test OllamaClient uses default values."""
         with patch.dict('sys.modules', {'httpx': Mock()}):
-            from src.llm import OllamaClient
+            from src.backend.llm import OllamaClient
             client = OllamaClient()
             
             assert client.model == 'qwen3.5:4b'  # Updated default model
@@ -244,7 +244,7 @@ class TestOllamaClient:
     def test_ollama_client_custom_params(self):
         """Test OllamaClient with custom parameters."""
         with patch.dict('sys.modules', {'httpx': Mock()}):
-            from src.llm import OllamaClient
+            from src.backend.llm import OllamaClient
             client = OllamaClient(host='custom-host', port=9999, model='custom-model')
             
             assert client.host == 'custom-host'

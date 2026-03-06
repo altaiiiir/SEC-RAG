@@ -6,7 +6,7 @@ import psycopg2
 from sentence_transformers import SentenceTransformer
 import tiktoken
 
-from src.db_config import get_db_config, get_embedding_model_name, get_chunk_config
+from src.backend.db_config import get_db_config, get_embedding_model_name, get_chunk_config
 
 class DocumentIndexer:
     """Indexes SEC EDGAR documents into pgvector database."""

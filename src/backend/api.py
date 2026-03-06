@@ -7,9 +7,9 @@ import time
 import json
 from contextlib import asynccontextmanager
 
-from src.indexer import DocumentIndexer
-from src.retriever import DocumentRetriever
-from src.llm import OllamaClient
+from src.backend.indexer import DocumentIndexer
+from src.backend.retriever import DocumentRetriever
+from src.backend.llm import OllamaClient
 
 indexer = None
 retriever = None

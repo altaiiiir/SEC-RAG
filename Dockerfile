@@ -19,4 +19,4 @@ COPY edgar_corpus/ ./edgar_corpus/
 EXPOSE 8000 8501
 
 # Default command
-CMD ["uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "src.backend.api:app", "--host", "0.0.0.0", "--port", "8000"]

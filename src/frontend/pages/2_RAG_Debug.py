@@ -1,14 +1,9 @@
 import streamlit as st
 import requests
-import os
-import sys
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.frontend.utils import API_URL, render_sidebar
 
-from streamlit_utils import API_URL, render_sidebar
-
-st.set_page_config(page_title="SEC EDGAR RAG Debug", page_icon="🔍", layout="wide")
+st.set_page_config(page_title="RAG Debug", page_icon="🔍", layout="wide")
 
 st.markdown("""
 <style>

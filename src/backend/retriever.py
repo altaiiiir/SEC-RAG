@@ -2,7 +2,7 @@ from typing import List, Dict, Optional
 import psycopg2
 from sentence_transformers import SentenceTransformer
 
-from src.db_config import get_db_config, get_embedding_model_name
+from src.backend.db_config import get_db_config, get_embedding_model_name
 
 class SearchResult:
     """A single search result with metadata."""
