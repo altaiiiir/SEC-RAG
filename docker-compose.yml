@@ -17,6 +17,19 @@ services:
       timeout: 5s
       retries: 5
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: edgar_ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   api:
     build: .
     container_name: edgar_api
@@ -32,6 +45,8 @@ services:
       - "${API_PORT:-8000}:8000"
     depends_on:
       postgres:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
     command: uvicorn src.api:app --host 0.0.0.0 --port 8000 --reload
 
@@ -54,3 +69,4 @@ services:
 volumes:
   postgres_data:
   model_cache:
+  ollama_data:

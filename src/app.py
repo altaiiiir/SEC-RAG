@@ -1,33 +1,34 @@
 import streamlit as st
 import requests
+import json
 import os
-from typing import Optional
 
 # Configuration
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 st.set_page_config(
-    page_title="SEC EDGAR RAG",
-    page_icon="📊",
+    page_title="SEC EDGAR Chat",
+    page_icon="💬",
     layout="wide",
 )
 
-# Custom CSS for better styling
+# Custom CSS
 st.markdown("""
 <style>
-    .result-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin-bottom: 1rem;
+    .evidence-card {
+        background-color: #f8f9fa;
+        padding: 0.8rem;
+        border-radius: 0.3rem;
+        margin-bottom: 0.5rem;
+        border-left: 3px solid #0066cc;
     }
-    .similarity-score {
-        color: #0066cc;
+    .similarity-badge {
+        background-color: #0066cc;
+        color: white;
+        padding: 0.2rem 0.5rem;
+        border-radius: 0.3rem;
+        font-size: 0.8rem;
         font-weight: bold;
-    }
-    .metadata {
-        color: #666;
-        font-size: 0.9rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -53,8 +54,8 @@ def get_stats():
     return None
 
 
-def search_documents(query: str, top_k: int, ticker: Optional[str], filing_type: Optional[str]):
-    """Search documents via API."""
+def ask_question(query: str, top_k: int, ticker: str = None, filing_type: str = None):
+    """Ask a question and get streaming response with evidence."""
     try:
         payload = {
             "query": query,
@@ -64,21 +65,46 @@ def search_documents(query: str, top_k: int, ticker: Optional[str], filing_type:
             payload["ticker"] = ticker
         if filing_type:
             payload["filing_type"] = filing_type
-            
-        response = requests.post(f"{API_URL}/query", json=payload, timeout=30)
+        
+        response = requests.post(
+            f"{API_URL}/ask",
+            json=payload,
+            stream=True,
+            timeout=120
+        )
+        
         if response.status_code == 200:
-            return response.json()
+            answer_text = ""
+            evidence_data = []
+            
+            for line in response.iter_lines():
+                if line:
+                    line_str = line.decode('utf-8')
+                    if line_str.startswith('data: '):
+                        data_json = line_str[6:]  # Remove 'data: ' prefix
+                        try:
+                            data = json.loads(data_json)
+                            
+                            if data['type'] == 'content':
+                                answer_text += data['data']
+                                yield {'type': 'content', 'data': data['data']}
+                            elif data['type'] == 'evidence':
+                                evidence_data = data['data']
+                            elif data['type'] == 'done':
+                                yield {'type': 'done', 'evidence': evidence_data}
+                                break
+                        except json.JSONDecodeError:
+                            continue
         else:
-            st.error(f"API error: {response.status_code}")
-            return None
+            yield {'type': 'error', 'message': f"API error: {response.status_code}"}
+    
     except Exception as e:
-        st.error(f"Request failed: {str(e)}")
-        return None
+        yield {'type': 'error', 'message': f"Request failed: {str(e)}"}
 
 
 # Main UI
-st.title("📊 SEC EDGAR RAG System")
-st.markdown("Search through SEC 10-K and 10-Q filings using AI-powered semantic search")
+st.title("💬 Ask SEC EDGAR")
+st.markdown("Chat with SEC filings using AI-powered answers backed by real evidence")
 
 # Sidebar
 with st.sidebar:
@@ -97,10 +123,6 @@ with st.sidebar:
         st.metric("Documents", stats["total_documents"])
         st.metric("Chunks", f"{stats['total_chunks']:,}")
         st.metric("Companies", stats["total_tickers"])
-        
-        with st.expander("Filing Types"):
-            for filing_type, count in stats.get("by_filing_type", {}).items():
-                st.write(f"**{filing_type}**: {count} documents")
     
     st.divider()
     
@@ -120,81 +142,107 @@ with st.sidebar:
     )
     
     top_k = st.slider(
-        "Results",
+        "Context Chunks",
         min_value=1,
         max_value=20,
         value=5,
-        help="Number of results to return"
+        help="Number of document chunks to use as context"
     )
 
-# Main search area
-query = st.text_input(
-    "🔎 Enter your question",
-    placeholder="e.g., What was Apple's revenue in Q4 2024?",
-    key="search_query"
-)
+# Initialize session state for chat history
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
 
-col1, col2, col3 = st.columns([1, 1, 4])
-with col1:
-    search_button = st.button("Search", type="primary", use_container_width=True)
-with col2:
-    clear_button = st.button("Clear", use_container_width=True)
+# Display chat history
+for message in st.session_state.chat_history:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+        
+        # Display evidence if available
+        if message["role"] == "assistant" and "evidence" in message:
+            with st.expander("📄 Evidence", expanded=False):
+                for i, ev in enumerate(message["evidence"], 1):
+                    st.markdown(f"""
+                    <div class="evidence-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <div>
+                                <strong>{ev['ticker']}</strong> | {ev['filing_type']} | {ev['filing_date'] or 'N/A'}
+                            </div>
+                            <span class="similarity-badge">{ev['similarity']*100:.0f}% match</span>
+                        </div>
+                        <div style="font-size: 0.9rem; color: #333;">
+                            {ev['content'][:300]}...
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-if clear_button:
-    st.rerun()
-
-# Perform search
-if search_button and query:
-    with st.spinner("Searching documents..."):
-        results = search_documents(
-            query=query,
+# Chat input
+if prompt := st.chat_input("Ask a question about SEC filings..."):
+    # Add user message to chat history
+    st.session_state.chat_history.append({"role": "user", "content": prompt})
+    
+    # Display user message
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    
+    # Generate and display assistant response
+    with st.chat_message("assistant"):
+        response_placeholder = st.empty()
+        evidence_placeholder = st.empty()
+        
+        full_response = ""
+        evidence_data = []
+        
+        # Stream the response
+        for chunk in ask_question(
+            query=prompt,
             top_k=top_k,
             ticker=ticker_input if ticker_input else None,
             filing_type=filing_type if filing_type != "All" else None
-        )
-    
-    if results:
-        st.success(f"Found {results['total_results']} results in {results['took_ms']:.0f}ms")
+        ):
+            if chunk['type'] == 'content':
+                full_response += chunk['data']
+                response_placeholder.markdown(full_response + "▌")
+            elif chunk['type'] == 'done':
+                evidence_data = chunk['evidence']
+                response_placeholder.markdown(full_response)
+                break
+            elif chunk['type'] == 'error':
+                response_placeholder.error(chunk['message'])
+                break
         
-        # Display results
-        for i, result in enumerate(results["results"], 1):
-            with st.container():
-                st.markdown(f"### Result {i}")
-                
-                # Metadata row
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.markdown(f"**Ticker:** {result['ticker']}")
-                with col2:
-                    st.markdown(f"**Type:** {result['filing_type']}")
-                with col3:
-                    st.markdown(f"**Date:** {result['filing_date'] or 'N/A'}")
-                with col4:
-                    similarity_pct = result['similarity'] * 100
-                    st.markdown(f"**Similarity:** <span class='similarity-score'>{similarity_pct:.1f}%</span>", unsafe_allow_html=True)
-                
-                # Content
-                st.markdown("**Content:**")
-                st.text_area(
-                    label="",
-                    value=result['content'],
-                    height=150,
-                    key=f"result_{i}",
-                    label_visibility="collapsed"
-                )
-                
-                # Document info
-                st.caption(f"Document: {result['doc_id']} | Chunk ID: {result['chunk_id']}")
-                
-                st.divider()
-    else:
-        st.warning("No results found")
+        # Display evidence
+        if evidence_data:
+            with evidence_placeholder.expander("📄 Evidence", expanded=False):
+                for i, ev in enumerate(evidence_data, 1):
+                    st.markdown(f"""
+                    <div class="evidence-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <div>
+                                <strong>{ev['ticker']}</strong> | {ev['filing_type']} | {ev['filing_date'] or 'N/A'}
+                            </div>
+                            <span class="similarity-badge">{ev['similarity']*100:.0f}% match</span>
+                        </div>
+                        <div style="font-size: 0.9rem; color: #333;">
+                            {ev['content'][:300]}...
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        # Add assistant response to chat history
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": full_response,
+            "evidence": evidence_data
+        })
 
-elif search_button and not query:
-    st.warning("Please enter a search query")
+# Clear chat button
+if st.sidebar.button("🗑️ Clear Chat", use_container_width=True):
+    st.session_state.chat_history = []
+    st.rerun()
 
 # Example queries
-with st.expander("💡 Example Queries"):
+with st.expander("💡 Example Questions"):
     st.markdown("""
     - What was Apple's revenue in 2024?
     - What are Tesla's main risk factors?
@@ -206,4 +254,4 @@ with st.expander("💡 Example Queries"):
 
 # Footer
 st.divider()
-st.caption("SEC EDGAR RAG System | Built with FastAPI, Streamlit, and pgvector")
+st.caption("SEC EDGAR RAG System | Built with FastAPI, Streamlit, Ollama, and pgvector")

@@ -1,4 +1,4 @@
-.PHONY: help setup start stop restart logs clean index health stats shell build reset test test-cov
+.PHONY: help setup start stop restart logs clean index health stats shell build reset test test-cov pull-model check-ollama
 
 # Load environment variables from .env if it exists
 ifneq (,$(wildcard .env))
@@ -28,19 +28,21 @@ help:
 	@echo "  make clear     - Clear all indexed data"
 	@echo ""
 	@echo "Status:"
-	@echo "  make health    - Check API health"
-	@echo "  make stats     - Show database statistics"
-	@echo "  make logs      - View logs from all services"
+	@echo "  make health       - Check API health"
+	@echo "  make stats        - Show database statistics"
+	@echo "  make logs         - View logs from all services"
+	@echo "  make check-ollama - Check Ollama models"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test      - Run unit tests"
 	@echo "  make test-cov  - Run tests with coverage"
 	@echo ""
 	@echo "Development:"
-	@echo "  make shell     - Open shell in API container"
-	@echo "  make build     - Build containers"
-	@echo "  make clean     - Stop and remove containers"
-	@echo "  make reset     - Full reset (clean + start services)"
+	@echo "  make shell       - Open shell in API container"
+	@echo "  make build       - Build containers"
+	@echo "  make clean       - Stop and remove containers"
+	@echo "  make reset       - Full reset (clean + start services)"
+	@echo "  make pull-model  - Pull Ollama model (qwen2.5:4b)"
 	@echo ""
 	@echo "Quick Start:"
 	@echo "  1. make setup"
@@ -124,3 +126,15 @@ reset: clean setup
 	@echo "Starting services..."
 	@docker-compose up -d
 	@echo "Services started. To index: make index"
+
+# Pull Ollama model
+pull-model:
+	@echo "Pulling Ollama model (qwen3.5:4b)..."
+	@echo "This may take a few minutes (model is ~2.7GB)..."
+	docker exec edgar_ollama ollama pull qwen3.5:4b
+	@echo "Model pulled successfully!"
+
+# Check Ollama models
+check-ollama:
+	@echo "Installed Ollama models:"
+	@docker exec edgar_ollama ollama list

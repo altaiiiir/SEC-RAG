@@ -1,25 +1,30 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 import time
+import json
 from contextlib import asynccontextmanager
 
 from src.indexer import DocumentIndexer
 from src.retriever import DocumentRetriever
+from src.llm import OllamaClient
 
 
 # Shared instances
 indexer = None
 retriever = None
+llm_client = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize components on startup."""
-    global indexer, retriever
+    global indexer, retriever, llm_client
     indexer = DocumentIndexer()
     retriever = DocumentRetriever()
+    llm_client = OllamaClient()
     yield
 
 
@@ -78,6 +83,21 @@ class IndexResponse(BaseModel):
     stats: Dict[str, int]
 
 
+class AskRequest(BaseModel):
+    query: str = Field(..., description="User question")
+    top_k: int = Field(5, ge=1, le=20, description="Number of context chunks")
+    ticker: Optional[str] = Field(None, description="Filter by ticker symbol")
+    filing_type: Optional[str] = Field(None, description="Filter by filing type (10-K, 10-Q)")
+
+
+class Evidence(BaseModel):
+    content: str
+    ticker: str
+    filing_type: str
+    filing_date: Optional[str]
+    similarity: float
+
+
 # Endpoints
 @app.get("/")
 async def root():
@@ -85,7 +105,7 @@ async def root():
     return {
         "name": "SEC EDGAR RAG API",
         "version": "0.1.0",
-        "endpoints": ["/health", "/stats", "/query", "/index"],
+        "endpoints": ["/health", "/stats", "/query", "/ask", "/index"],
     }
 
 
@@ -156,6 +176,79 @@ async def clear_index():
         return {"status": "cleared", "message": "All indexed data removed"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Clear error: {str(e)}")
+
+
+@app.post("/ask")
+async def ask(request: AskRequest):
+    """
+    Ask a question and get an LLM-generated answer with evidence.
+    Returns streaming response with answer followed by evidence metadata.
+    """
+    try:
+        # Retrieve relevant context
+        results = retriever.search(
+            query=request.query,
+            top_k=request.top_k,
+            ticker=request.ticker,
+            filing_type=request.filing_type,
+        )
+        
+        if not results:
+            raise HTTPException(status_code=404, detail="No relevant documents found")
+        
+        # Build context from results
+        context_parts = []
+        for i, result in enumerate(results, 1):
+            context_parts.append(
+                f"[Document {i}]\n"
+                f"Ticker: {result.ticker}\n"
+                f"Filing: {result.filing_type}\n"
+                f"Date: {result.filing_date}\n"
+                f"Content: {result.content}\n"
+            )
+        
+        context = "\n\n".join(context_parts)
+        
+        # Create prompt
+        prompt = (
+            f"Based on these SEC filings:\n\n{context}\n\n"
+            f"Question: {request.query}\n\n"
+            f"Answer:"
+        )
+        
+        # Build evidence metadata
+        evidence_list = [
+            Evidence(
+                content=r.content,
+                ticker=r.ticker,
+                filing_type=r.filing_type,
+                filing_date=r.filing_date,
+                similarity=r.similarity
+            ).model_dump()
+            for r in results
+        ]
+        
+        async def generate_response():
+            """Stream the LLM response followed by evidence."""
+            # First, stream the LLM response
+            async for chunk in llm_client.generate_stream(prompt):
+                yield f"data: {json.dumps({'type': 'content', 'data': chunk})}\n\n"
+            
+            # Then send evidence
+            yield f"data: {json.dumps({'type': 'evidence', 'data': evidence_list})}\n\n"
+            
+            # Signal completion
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        
+        return StreamingResponse(
+            generate_response(),
+            media_type="text/event-stream"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ask error: {str(e)}")
 
 
 if __name__ == "__main__":
