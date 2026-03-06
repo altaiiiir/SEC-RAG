@@ -1,4 +1,4 @@
-.PHONY: help setup start stop restart logs clean index health stats shell build reset test test-cov pull-model check-ollama
+.PHONY: help setup start stop restart logs clean index health stats shell build reset test test-cov pull-model check-ollama clear-db
 
 # Load environment variables from .env if it exists
 ifneq (,$(wildcard .env))
@@ -26,6 +26,7 @@ help:
 	@echo "  make index     - Index all documents"
 	@echo "  make index n=5 - Index only 5 documents (for testing)"
 	@echo "  make clear     - Clear all indexed data"
+	@echo "  make clear-db  - Drop all data and schema from database"
 	@echo ""
 	@echo "Status:"
 	@echo "  make health       - Check API health"
@@ -88,6 +89,14 @@ clear:
 	@echo "Clearing index..."
 	docker-compose exec api python -c "from src.backend.indexer import DocumentIndexer; DocumentIndexer().clear_index()"
 	@echo "Index cleared!"
+
+# Clear database (drop all data and schema)
+clear-db:
+	@echo "WARNING: This will drop all data and schema from the database!"
+	@echo "Dropping database schema and data..."
+	@docker-compose exec -T db psql -U postgres -d edgar_rag -c "DROP TABLE IF EXISTS document_chunks CASCADE; DROP EXTENSION IF EXISTS vector CASCADE;"
+	@echo "Database cleared!"
+	@echo "To reinitialize the schema, run: docker-compose exec -T db psql -U postgres -d edgar_rag < init.sql"
 
 # Check health
 health:

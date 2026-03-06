@@ -1,8 +1,17 @@
+-- ============================================
+-- SEC EDGAR RAG - Database Initialization
+-- ============================================
+-- This script initializes the database schema and indexes.
+-- Run this when setting up a new database.
+
 -- Enable pgvector extension
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Create document_chunks table
-CREATE TABLE IF NOT EXISTS document_chunks (
+-- Drop existing objects (for clean setup)
+DROP TABLE IF EXISTS document_chunks CASCADE;
+
+-- Create document_chunks table with all metadata columns
+CREATE TABLE document_chunks (
     id SERIAL PRIMARY KEY,
     doc_id TEXT NOT NULL,
     ticker TEXT NOT NULL,
@@ -21,21 +30,21 @@ CREATE TABLE IF NOT EXISTS document_chunks (
 );
 
 -- Create indexes for faster queries
-CREATE INDEX IF NOT EXISTS idx_ticker ON document_chunks(ticker);
-CREATE INDEX IF NOT EXISTS idx_filing_type ON document_chunks(filing_type);
-CREATE INDEX IF NOT EXISTS idx_filing_date ON document_chunks(filing_date);
-CREATE INDEX IF NOT EXISTS idx_doc_id ON document_chunks(doc_id);
+CREATE INDEX idx_ticker ON document_chunks(ticker);
+CREATE INDEX idx_filing_type ON document_chunks(filing_type);
+CREATE INDEX idx_filing_date ON document_chunks(filing_date);
+CREATE INDEX idx_doc_id ON document_chunks(doc_id);
 
 -- Create composite index for common filtered searches
-CREATE INDEX IF NOT EXISTS idx_ticker_filing ON document_chunks(ticker, filing_type);
+CREATE INDEX idx_ticker_filing ON document_chunks(ticker, filing_type);
 
--- Create indexes for new metadata columns
-CREATE INDEX IF NOT EXISTS idx_chunk_type ON document_chunks(chunk_type);
-CREATE INDEX IF NOT EXISTS idx_section_name ON document_chunks(section_name);
-CREATE INDEX IF NOT EXISTS idx_table_id ON document_chunks(table_id);
+-- Create indexes for metadata columns
+CREATE INDEX idx_chunk_type ON document_chunks(chunk_type);
+CREATE INDEX idx_section_name ON document_chunks(section_name);
+CREATE INDEX idx_table_id ON document_chunks(table_id);
 
 -- Create vector similarity search index using HNSW
-CREATE INDEX IF NOT EXISTS idx_embedding ON document_chunks 
+CREATE INDEX idx_embedding ON document_chunks 
 USING hnsw (embedding vector_cosine_ops)
 WITH (m = 16, ef_construction = 64);
 
