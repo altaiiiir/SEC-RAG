@@ -15,7 +15,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-def search_documents(query: str, top_k: int, ticker: str = None, filing_type: str = None):
+def search_documents(query: str, top_k: int, ticker: str = None, filing_type: str = None, chunk_type: str = None):
     """Search documents via API."""
     try:
         payload = {
@@ -26,6 +26,8 @@ def search_documents(query: str, top_k: int, ticker: str = None, filing_type: st
             payload["ticker"] = ticker
         if filing_type:
             payload["filing_type"] = filing_type
+        if chunk_type:
+            payload["chunk_type"] = chunk_type
             
         response = requests.post(f"{API_URL}/query", json=payload, timeout=30)
         if response.status_code == 200:
@@ -68,6 +70,12 @@ with st.sidebar:
         help="Filter by filing type"
     )
     
+    chunk_type_filter = st.selectbox(
+        "Chunk Type",
+        options=["All", "table", "list", "financial_statement", "narrative"],
+        help="Filter by content type"
+    )
+    
     top_k = st.slider(
         "Results",
         min_value=1,
@@ -99,7 +107,8 @@ if search_button and query:
             query=query,
             top_k=top_k,
             ticker=ticker_input if ticker_input else None,
-            filing_type=filing_type if filing_type != "All" else None
+            filing_type=filing_type if filing_type != "All" else None,
+            chunk_type=chunk_type_filter if chunk_type_filter != "All" else None
         )
     
     if results:
@@ -110,8 +119,8 @@ if search_button and query:
             with st.container():
                 st.markdown(f"### Result {i}")
                 
-                # Metadata row
-                col1, col2, col3, col4 = st.columns(4)
+                # Metadata row with chunk type
+                col1, col2, col3, col4, col5 = st.columns(5)
                 with col1:
                     st.markdown(f"**Ticker:** {result['ticker']}")
                 with col2:
@@ -119,8 +128,23 @@ if search_button and query:
                 with col3:
                     st.markdown(f"**Date:** {result['filing_date'] or 'N/A'}")
                 with col4:
+                    chunk_type = result.get('chunk_type', 'N/A')
+                    st.markdown(f"**Chunk:** {chunk_type}")
+                with col5:
                     similarity_pct = result['similarity'] * 100
                     st.markdown(f"**Similarity:** <span class='similarity-score'>{similarity_pct:.1f}%</span>", unsafe_allow_html=True)
+                
+                # Section and table metadata if available
+                metadata_info = []
+                if result.get('section_name'):
+                    metadata_info.append(f"📄 Section: {result['section_name']}")
+                if result.get('table_id'):
+                    metadata_info.append(f"📊 Table: {result['table_id']}")
+                if result.get('row_range'):
+                    metadata_info.append(f"📏 Rows: {result['row_range']}")
+                
+                if metadata_info:
+                    st.caption(" | ".join(metadata_info))
                 
                 # Content
                 st.markdown("**Content:**")

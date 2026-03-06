@@ -12,6 +12,9 @@ from functools import lru_cache
 import os
 
 from src.backend.db_config import get_db_config, get_embedding_model_name, get_chunk_config
+from src.backend.chunking_config import get_chunking_config
+from src.backend.content_detector import ContentDetector
+from src.backend.adaptive_chunker import AdaptiveChunker, chunk_document_adaptive
 
 # Global connection pool
 _connection_pool = None
@@ -49,6 +52,18 @@ class DocumentIndexer:
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
         self.pool = get_connection_pool()
         
+        # Adaptive chunking components
+        self.chunking_config = get_chunking_config()
+        self.use_adaptive = self.chunking_config['enable_adaptive_chunking']
+        
+        if self.use_adaptive:
+            self.detector = ContentDetector(
+                min_table_rows=self.chunking_config['min_table_rows'],
+                min_list_items=self.chunking_config['min_list_items']
+            )
+            self.adaptive_chunker = AdaptiveChunker()
+            print(f"Adaptive chunking enabled")
+        
     def _parse_filename(self, filename: str) -> Dict[str, Optional[str]]:
         """Extract metadata from filename like AAPL_10K_2022Q3_2022-10-28_full.txt"""
         parts = filename.replace("_full.txt", "").split("_")
@@ -70,7 +85,7 @@ class DocumentIndexer:
         return metadata
     
     def _chunk_text(self, text: str) -> List[str]:
-        """Split text into fixed-size chunks with overlap."""
+        """Split text into fixed-size chunks with overlap (legacy method)."""
         tokens = self.tokenizer.encode(text)
         chunks = []
         
@@ -83,6 +98,30 @@ class DocumentIndexer:
             start += self.chunk_size - self.chunk_overlap
             
         return chunks
+    
+    def _chunk_document(self, text: str) -> List[Dict]:
+        """
+        Chunk document using adaptive or fixed strategy.
+        
+        Returns:
+            List of chunk dictionaries with text and metadata
+        """
+        if self.use_adaptive:
+            # Use adaptive chunking
+            chunks = chunk_document_adaptive(text, self.adaptive_chunker, self.detector)
+            return chunks
+        else:
+            # Use fixed-size chunking (legacy)
+            chunk_texts = self._chunk_text(text)
+            return [
+                {
+                    'text': chunk,
+                    'chunk_type': 'narrative',
+                    'token_count': len(self.tokenizer.encode(chunk)),
+                    'metadata': {}
+                }
+                for chunk in chunk_texts
+            ]
     
     def _get_db_connection(self):
         """Get database connection from pool."""
@@ -103,31 +142,44 @@ class DocumentIndexer:
         with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
         
-        # Chunk document
-        chunks = self._chunk_text(content)
-        print(f"  Created {len(chunks)} chunks")
+        # Chunk document (returns list of dicts)
+        chunk_dicts = self._chunk_document(content)
+        print(f"  Created {len(chunk_dicts)} chunks")
+        
+        # Extract just the text for embeddings
+        chunk_texts = [chunk['text'] for chunk in chunk_dicts]
         
         # Generate embeddings in batch
-        embeddings = self.model.encode(chunks, show_progress_bar=False, batch_size=32)
+        embeddings = self.model.encode(chunk_texts, show_progress_bar=False, batch_size=32)
         
         # Store in database with batch insert
         conn = self._get_db_connection()
         cursor = conn.cursor()
         
-        # Prepare batch data
-        batch_data = [
-            (
+        # Prepare batch data with enhanced metadata
+        batch_data = []
+        for idx, (chunk_dict, embedding) in enumerate(zip(chunk_dicts, embeddings)):
+            # Extract section name for this chunk
+            section_name = ""
+            if self.use_adaptive and hasattr(self, 'detector'):
+                # Find position in original document (approximate)
+                section_name = self.detector.extract_section_name(content, idx * 100)
+            
+            batch_data.append((
                 doc_id,
                 metadata["ticker"],
                 metadata["filing_type"],
                 metadata["filing_date"],
                 metadata["quarter"],
                 idx,
-                chunk,
+                chunk_dict['text'],
                 embedding.tolist(),
-            )
-            for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings))
-        ]
+                chunk_dict.get('chunk_type', 'narrative'),
+                section_name,
+                chunk_dict.get('table_id'),
+                chunk_dict.get('row_range'),
+                None  # page_estimate - can be added later
+            ))
         
         # Batch insert
         try:
@@ -135,8 +187,9 @@ class DocumentIndexer:
                 cursor,
                 """
                 INSERT INTO document_chunks 
-                (doc_id, ticker, filing_type, filing_date, quarter, chunk_index, content, embedding)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                (doc_id, ticker, filing_type, filing_date, quarter, chunk_index, content, embedding,
+                 chunk_type, section_name, table_id, row_range, page_estimate)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 batch_data,
                 page_size=100

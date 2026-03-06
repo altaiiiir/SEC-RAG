@@ -106,6 +106,7 @@ make logs         # View logs
 make health       # Check API health
 make stats        # Database statistics
 make test         # Run unit tests
+make evaluate     # Evaluate chunking strategies
 make clean        # Remove everything
 make pull-model   # Pull Ollama model
 make check-ollama # Check Ollama models
@@ -168,20 +169,31 @@ API docs: http://localhost:8000/docs
 SEC-RAG/
 ├── edgar_corpus/       # 246 SEC filing txt files
 ├── src/
-│   ├── indexer.py     # Document processing
-│   ├── retriever.py   # Vector search
-│   ├── llm.py         # Ollama LLM client
-│   ├── api.py         # FastAPI backend
-│   ├── app.py         # Streamlit chat UI
-│   └── pages/
-│       └── 2_RAG_Debug.py  # Debug view
+│   ├── backend/
+│   │   ├── indexer.py           # Document processing
+│   │   ├── retriever.py         # Vector search
+│   │   ├── llm.py               # Ollama LLM client
+│   │   ├── api.py               # FastAPI backend
+│   │   ├── db_config.py         # Database configuration
+│   │   ├── chunking_config.py   # Chunking hyperparameters (NEW)
+│   │   ├── content_detector.py  # Content type detection (NEW)
+│   │   ├── adaptive_chunker.py  # Adaptive chunking logic (NEW)
+│   │   └── evaluate_chunking.py # Chunking evaluation (NEW)
+│   └── frontend/
+│       ├── Chat.py              # Streamlit chat UI
+│       ├── utils.py             # Shared utilities
+│       └── pages/
+│           └── 1_RAG_Debug.py   # Debug view
 ├── tests/
-│   └── test_rag.py    # Unit tests
+│   ├── test_rag.py              # Core RAG tests
+│   └── test_adaptive_chunking.py # Chunking tests (NEW)
 ├── docker-compose.yml
 ├── Dockerfile
-├── init.sql
+├── init.sql                     # Database schema
+├── migrate_schema.sql           # Schema migration (NEW)
 ├── Makefile
-└── pyproject.toml     # UV dependencies
+├── CHUNKING_EXPERIMENTS.md      # Experiment log (NEW)
+└── pyproject.toml               # UV dependencies
 ```
 
 ## Configuration
@@ -197,6 +209,41 @@ Key settings:
 - `OLLAMA_HOST`: Ollama host (default: ollama)
 - `OLLAMA_PORT`: Ollama port (default: 11434)
 - `CHUNK_SIZE`: Tokens per chunk (default: 512)
+
+### Adaptive Chunking (NEW)
+
+The system now uses content-aware chunking that adapts to different document structures:
+
+**Content Types:**
+- **Tables**: Split by row groups, preserving headers
+- **Lists**: Keep related items together with context
+- **Financial Statements**: Treat as semantic units
+- **Narrative**: Fixed-size with sentence boundaries
+
+**Configuration:**
+```bash
+ENABLE_ADAPTIVE_CHUNKING=true   # Enable/disable adaptive chunking
+CHUNK_SIZE=512                   # Base chunk size in tokens
+CHUNK_OVERLAP=50                 # Token overlap between chunks
+MIN_CHUNK_SIZE=100              # Minimum chunk size
+TABLE_ROW_CHUNK_SIZE=5          # Rows per table chunk
+ENABLE_SENTENCE_BOUNDARIES=true  # Snap to sentence ends
+ENABLE_TABLE_DETECTION=true      # Detect and preserve tables
+ENABLE_LIST_DETECTION=true       # Detect and preserve lists
+```
+
+**Benefits:**
+- Tables remain intact with headers preserved
+- Financial data stays together for better context
+- Lists maintain parent context across chunks
+- No mid-sentence splits in narrative text
+
+**Evaluation:**
+```bash
+make evaluate  # Compare chunking strategies
+```
+
+See `CHUNKING_EXPERIMENTS.md` for detailed experiment tracking.
 - `CHUNK_OVERLAP`: Chunk overlap (default: 50)
 - `EMBEDDING_MODEL`: Model (default: all-MiniLM-L6-v2)
 

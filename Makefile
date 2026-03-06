@@ -36,6 +36,7 @@ help:
 	@echo "Testing:"
 	@echo "  make test      - Run unit tests"
 	@echo "  make test-cov  - Run tests with coverage"
+	@echo "  make evaluate  - Evaluate chunking strategies"
 	@echo ""
 	@echo "Development:"
 	@echo "  make shell       - Open shell in API container"
@@ -79,13 +80,13 @@ logs:
 # Index documents
 index:
 	@echo "Indexing documents..."
-	@docker-compose exec api python -m src.indexer $(if $(n),$(n),)
+	@docker-compose exec api python -m src.backend.indexer $(if $(n),$(n),)
 	@echo "Indexing complete!"
 
 # Clear index
 clear:
 	@echo "Clearing index..."
-	docker-compose exec api python -c "from src.indexer import DocumentIndexer; DocumentIndexer().clear_index()"
+	docker-compose exec api python -c "from src.backend.indexer import DocumentIndexer; DocumentIndexer().clear_index()"
 	@echo "Index cleared!"
 
 # Check health
@@ -138,3 +139,9 @@ pull-model:
 check-ollama:
 	@echo "Installed Ollama models:"
 	@docker exec edgar_ollama ollama list | grep $(OLLAMA_MODEL)
+
+# Evaluate chunking
+evaluate:
+	@echo "Evaluating chunking strategies..."
+	@docker-compose exec api python -m src.backend.evaluate_chunking
+	@echo "Evaluation complete!"

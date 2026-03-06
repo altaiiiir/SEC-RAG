@@ -54,7 +54,9 @@ class SearchResult:
     """A single search result with metadata."""
     
     def __init__(self, chunk_id: int, doc_id: str, ticker: str, filing_type: str,
-                 filing_date: str, quarter: str, content: str, similarity: float):
+                 filing_date: str, quarter: str, content: str, similarity: float,
+                 chunk_type: str = None, section_name: str = None,
+                 table_id: str = None, row_range: str = None):
         self.chunk_id = chunk_id
         self.doc_id = doc_id
         self.ticker = ticker
@@ -63,6 +65,10 @@ class SearchResult:
         self.quarter = quarter
         self.content = content
         self.similarity = similarity
+        self.chunk_type = chunk_type
+        self.section_name = section_name
+        self.table_id = table_id
+        self.row_range = row_range
     
     def to_dict(self) -> Dict:
         return {
@@ -74,6 +80,10 @@ class SearchResult:
             "quarter": self.quarter,
             "content": self.content,
             "similarity": self.similarity,
+            "chunk_type": self.chunk_type,
+            "section_name": self.section_name,
+            "table_id": self.table_id,
+            "row_range": self.row_range,
         }
 
 
@@ -100,11 +110,12 @@ class DocumentRetriever:
         top_k: int = 5,
         ticker: Optional[str] = None,
         filing_type: Optional[str] = None,
+        chunk_type: Optional[str] = None,
     ) -> List[SearchResult]:
         """Search for relevant chunks with caching."""
         
         # Check cache
-        cache_key = f"{query}:{top_k}:{ticker}:{filing_type}"
+        cache_key = f"{query}:{top_k}:{ticker}:{filing_type}:{chunk_type}"
         cached = get_cached_query(cache_key)
         if cached is not None:
             return cached
@@ -116,7 +127,8 @@ class DocumentRetriever:
         sql = """
             SELECT 
                 id, doc_id, ticker, filing_type, filing_date, quarter, content,
-                1 - (embedding <=> %s::vector) as similarity
+                1 - (embedding <=> %s::vector) as similarity,
+                chunk_type, section_name, table_id, row_range
             FROM document_chunks
             WHERE 1=1
         """
@@ -129,6 +141,10 @@ class DocumentRetriever:
         if filing_type:
             sql += " AND filing_type = %s"
             params.append(filing_type)
+        
+        if chunk_type:
+            sql += " AND chunk_type = %s"
+            params.append(chunk_type)
         
         sql += " ORDER BY embedding <=> %s::vector LIMIT %s"
         params.extend([query_embedding.tolist(), top_k])
@@ -154,6 +170,10 @@ class DocumentRetriever:
                 quarter=row[5],
                 content=row[6],
                 similarity=float(row[7]),
+                chunk_type=row[8],
+                section_name=row[9],
+                table_id=row[10],
+                row_range=row[11],
             )
             for row in rows
         ]

@@ -36,6 +36,7 @@ class QueryRequest(BaseModel):
     top_k: int = Field(5, ge=1, le=20)
     ticker: Optional[str] = None
     filing_type: Optional[str] = None
+    chunk_type: Optional[str] = None  # Filter by chunk type
 
 
 class SearchResult(BaseModel):
@@ -47,6 +48,10 @@ class SearchResult(BaseModel):
     quarter: Optional[str]
     content: str
     similarity: float
+    chunk_type: Optional[str] = None
+    section_name: Optional[str] = None
+    table_id: Optional[str] = None
+    row_range: Optional[str] = None
 
 
 class QueryResponse(BaseModel):
@@ -62,6 +67,10 @@ class Evidence(BaseModel):
     filing_type: str
     filing_date: Optional[str]
     similarity: float
+    chunk_type: Optional[str] = None
+    section_name: Optional[str] = None
+    table_id: Optional[str] = None
+    row_range: Optional[str] = None
 
 
 # Endpoints
@@ -91,7 +100,13 @@ async def get_stats():
 async def query(request: QueryRequest):
     start_time = time.time()
     try:
-        results = retriever.search(query=request.query, top_k=request.top_k, ticker=request.ticker, filing_type=request.filing_type)
+        results = retriever.search(
+            query=request.query,
+            top_k=request.top_k,
+            ticker=request.ticker,
+            filing_type=request.filing_type,
+            chunk_type=request.chunk_type
+        )
         return QueryResponse(
             query=request.query,
             results=[SearchResult(**r.to_dict()) for r in results],
@@ -124,7 +139,13 @@ async def clear_index():
 async def ask(request: QueryRequest):
     """Ask a question and get an LLM-generated answer with evidence."""
     try:
-        results = retriever.search(query=request.query, top_k=request.top_k, ticker=request.ticker, filing_type=request.filing_type)
+        results = retriever.search(
+            query=request.query,
+            top_k=request.top_k,
+            ticker=request.ticker,
+            filing_type=request.filing_type,
+            chunk_type=request.chunk_type
+        )
         
         if not results:
             raise HTTPException(status_code=404, detail="No relevant documents found")
@@ -142,7 +163,18 @@ async def ask(request: QueryRequest):
             f"Answer:"
         )
         
-        evidence_list = [Evidence(**{k: v for k, v in r.to_dict().items() if k in ['content', 'ticker', 'filing_type', 'filing_date', 'similarity']}).model_dump() for r in results]
+        # Include all metadata in evidence
+        evidence_list = [Evidence(**{
+            'content': r.content,
+            'ticker': r.ticker,
+            'filing_type': r.filing_type,
+            'filing_date': r.filing_date,
+            'similarity': r.similarity,
+            'chunk_type': r.chunk_type,
+            'section_name': r.section_name,
+            'table_id': r.table_id,
+            'row_range': r.row_range
+        }).model_dump() for r in results]
         
         async def generate_response():
             async for chunk in llm_client.generate_stream(prompt):

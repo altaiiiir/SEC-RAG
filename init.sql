@@ -12,6 +12,11 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     chunk_index INT NOT NULL,
     content TEXT NOT NULL,
     embedding vector(384),
+    chunk_type TEXT,
+    section_name TEXT,
+    table_id TEXT,
+    row_range TEXT,
+    page_estimate INT,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -23,6 +28,11 @@ CREATE INDEX IF NOT EXISTS idx_doc_id ON document_chunks(doc_id);
 
 -- Create composite index for common filtered searches
 CREATE INDEX IF NOT EXISTS idx_ticker_filing ON document_chunks(ticker, filing_type);
+
+-- Create indexes for new metadata columns
+CREATE INDEX IF NOT EXISTS idx_chunk_type ON document_chunks(chunk_type);
+CREATE INDEX IF NOT EXISTS idx_section_name ON document_chunks(section_name);
+CREATE INDEX IF NOT EXISTS idx_table_id ON document_chunks(table_id);
 
 -- Create vector similarity search index using HNSW
 CREATE INDEX IF NOT EXISTS idx_embedding ON document_chunks 

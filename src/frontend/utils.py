@@ -61,18 +61,52 @@ def get_common_css():
             font-size: 0.8rem;
             font-weight: bold;
         }
+        .chunk-type-badge {
+            color: white;
+            padding: 0.2rem 0.5rem;
+            border-radius: 0.3rem;
+            font-size: 0.7rem;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
     </style>
     """
 
 def render_evidence_card(ev):
-    """Render a single evidence card."""
+    """Render a single evidence card with metadata."""
+    # Chunk type badge
+    chunk_type = ev.get('chunk_type', 'narrative')
+    chunk_type_colors = {
+        'table': '#4CAF50',
+        'list': '#FF9800',
+        'financial_statement': '#9C27B0',
+        'narrative': '#2196F3'
+    }
+    chunk_color = chunk_type_colors.get(chunk_type, '#2196F3')
+    
+    # Build metadata line
+    metadata_parts = [f"<strong>{ev['ticker']}</strong>", ev['filing_type'], ev['filing_date'] or 'N/A']
+    
+    # Add section name if available
+    if ev.get('section_name'):
+        metadata_parts.append(f"<em>{ev['section_name']}</em>")
+    
+    # Add table/row info if available
+    if ev.get('table_id') and ev.get('row_range'):
+        metadata_parts.append(f"Rows: {ev['row_range']}")
+    
+    metadata_line = " | ".join(metadata_parts)
+    
     return f"""
     <div class="evidence-card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-            <div>
-                <strong>{ev['ticker']}</strong> | {ev['filing_type']} | {ev['filing_date'] or 'N/A'}
+            <div style="flex-grow: 1;">
+                {metadata_line}
             </div>
-            <span class="similarity-badge">{ev['similarity']*100:.0f}% match</span>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <span class="chunk-type-badge" style="background-color: {chunk_color};">{chunk_type}</span>
+                <span class="similarity-badge">{ev['similarity']*100:.0f}%</span>
+            </div>
         </div>
         <div style="font-size: 0.9rem; opacity: 0.8;">
             {ev['content'][:300]}...
