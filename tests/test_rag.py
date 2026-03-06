@@ -23,6 +23,10 @@ class TestFilenameParser:
             'psycopg2': Mock(),
             'sentence_transformers': Mock(),
             'tiktoken': Mock(),
+            'concurrent': Mock(),
+            'concurrent.futures': Mock(),
+            'concurrent': Mock(),
+            'concurrent.futures': Mock(),
         }):
             from src.backend.indexer import DocumentIndexer
             indexer = DocumentIndexer()
@@ -37,8 +41,12 @@ class TestFilenameParser:
         """Test parsing filename without quarter."""
         with patch.dict('sys.modules', {
             'psycopg2': Mock(),
+            'psycopg2.pool': Mock(),
+            'psycopg2.extras': Mock(),
             'sentence_transformers': Mock(),
             'tiktoken': Mock(),
+            'concurrent': Mock(),
+            'concurrent.futures': Mock(),
         }):
             from src.backend.indexer import DocumentIndexer
             indexer = DocumentIndexer()
@@ -53,8 +61,12 @@ class TestFilenameParser:
         """Test parsing various filename formats."""
         with patch.dict('sys.modules', {
             'psycopg2': Mock(),
+            'psycopg2.pool': Mock(),
+            'psycopg2.extras': Mock(),
             'sentence_transformers': Mock(),
             'tiktoken': Mock(),
+            'concurrent': Mock(),
+            'concurrent.futures': Mock(),
         }):
             from src.backend.indexer import DocumentIndexer
             indexer = DocumentIndexer()
@@ -152,8 +164,12 @@ class TestDatabaseOperations:
         # In Docker, host defaults to 'postgres', locally to 'localhost'
         with patch.dict('sys.modules', {
             'psycopg2': Mock(),
+            'psycopg2.pool': Mock(),
+            'psycopg2.extras': Mock(),
             'sentence_transformers': Mock(),
             'tiktoken': Mock(),
+            'concurrent': Mock(),
+            'concurrent.futures': Mock(),
         }):
             from src.backend.indexer import DocumentIndexer
             indexer = DocumentIndexer()

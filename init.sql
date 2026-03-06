@@ -21,6 +21,13 @@ CREATE INDEX IF NOT EXISTS idx_filing_type ON document_chunks(filing_type);
 CREATE INDEX IF NOT EXISTS idx_filing_date ON document_chunks(filing_date);
 CREATE INDEX IF NOT EXISTS idx_doc_id ON document_chunks(doc_id);
 
+-- Create composite index for common filtered searches
+CREATE INDEX IF NOT EXISTS idx_ticker_filing ON document_chunks(ticker, filing_type);
+
 -- Create vector similarity search index using HNSW
 CREATE INDEX IF NOT EXISTS idx_embedding ON document_chunks 
-USING hnsw (embedding vector_cosine_ops);
+USING hnsw (embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);
+
+-- Analyze table for query optimizer
+ANALYZE document_chunks;

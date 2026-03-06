@@ -3,10 +3,37 @@ from typing import List, Dict, Optional
 import re
 import json
 import psycopg2
+from psycopg2 import pool
+from psycopg2.extras import execute_batch
 from sentence_transformers import SentenceTransformer
 import tiktoken
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import lru_cache
+import os
 
 from src.backend.db_config import get_db_config, get_embedding_model_name, get_chunk_config
+
+# Global connection pool
+_connection_pool = None
+
+def get_connection_pool():
+    """Get or create connection pool."""
+    global _connection_pool
+    if _connection_pool is None:
+        db_config = get_db_config()
+        _connection_pool = pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=10,
+            **db_config
+        )
+    return _connection_pool
+
+@lru_cache(maxsize=1)
+def get_embedding_model():
+    """Get cached embedding model."""
+    model_name = get_embedding_model_name()
+    print(f"Loading embedding model: {model_name}")
+    return SentenceTransformer(model_name)
 
 class DocumentIndexer:
     """Indexes SEC EDGAR documents into pgvector database."""
@@ -18,9 +45,9 @@ class DocumentIndexer:
         self.chunk_size = chunk_config["size"]
         self.chunk_overlap = chunk_config["overlap"]
         
-        print(f"Loading embedding model: {self.embedding_model_name}")
-        self.model = SentenceTransformer(self.embedding_model_name)
+        self.model = get_embedding_model()
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        self.pool = get_connection_pool()
         
     def _parse_filename(self, filename: str) -> Dict[str, Optional[str]]:
         """Extract metadata from filename like AAPL_10K_2022Q3_2022-10-28_full.txt"""
@@ -58,11 +85,15 @@ class DocumentIndexer:
         return chunks
     
     def _get_db_connection(self):
-        """Create database connection."""
-        return psycopg2.connect(**self.db_config)
+        """Get database connection from pool."""
+        return self.pool.getconn()
+    
+    def _return_db_connection(self, conn):
+        """Return connection to pool."""
+        self.pool.putconn(conn)
     
     def index_document(self, filepath: Path) -> int:
-        """Index a single document file."""
+        """Index a single document file with batch inserts."""
         metadata = self._parse_filename(filepath.name)
         doc_id = filepath.stem
         
@@ -76,50 +107,60 @@ class DocumentIndexer:
         chunks = self._chunk_text(content)
         print(f"  Created {len(chunks)} chunks")
         
-        # Generate embeddings
-        embeddings = self.model.encode(chunks, show_progress_bar=False)
+        # Generate embeddings in batch
+        embeddings = self.model.encode(chunks, show_progress_bar=False, batch_size=32)
         
-        # Store in database
+        # Store in database with batch insert
         conn = self._get_db_connection()
         cursor = conn.cursor()
         
-        inserted = 0
-        for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-            try:
-                cursor.execute(
-                    """
-                    INSERT INTO document_chunks 
-                    (doc_id, ticker, filing_type, filing_date, quarter, chunk_index, content, embedding)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        doc_id,
-                        metadata["ticker"],
-                        metadata["filing_type"],
-                        metadata["filing_date"],
-                        metadata["quarter"],
-                        idx,
-                        chunk,
-                        embedding.tolist(),
-                    )
-                )
-                inserted += 1
-            except Exception as e:
-                print(f"  Error inserting chunk {idx}: {e}")
-                
-        conn.commit()
-        cursor.close()
-        conn.close()
+        # Prepare batch data
+        batch_data = [
+            (
+                doc_id,
+                metadata["ticker"],
+                metadata["filing_type"],
+                metadata["filing_date"],
+                metadata["quarter"],
+                idx,
+                chunk,
+                embedding.tolist(),
+            )
+            for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings))
+        ]
+        
+        # Batch insert
+        try:
+            execute_batch(
+                cursor,
+                """
+                INSERT INTO document_chunks 
+                (doc_id, ticker, filing_type, filing_date, quarter, chunk_index, content, embedding)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                batch_data,
+                page_size=100
+            )
+            conn.commit()
+            inserted = len(batch_data)
+        except Exception as e:
+            conn.rollback()
+            print(f"  Error inserting chunks: {e}")
+            inserted = 0
+        finally:
+            cursor.close()
+            self._return_db_connection(conn)
         
         print(f"  Inserted {inserted} chunks")
         return inserted
     
-    def index_corpus(self, corpus_dir: str = "edgar_corpus", max_docs: int = None) -> Dict[str, int]:
-        """Index all documents in the corpus directory using manifest.json.
+    def index_corpus(self, corpus_dir: str = "edgar_corpus", max_docs: int = None, parallel: bool = True) -> Dict[str, int]:
+        """Index all documents with optional parallel processing.
         
         Args:
             corpus_dir: Directory containing documents
             max_docs: Maximum number of documents to index (None = all)
+            parallel: Use parallel processing (default: True)
         """
         corpus_path = Path(corpus_dir)
         manifest_path = corpus_path / "manifest.json"
@@ -141,7 +182,7 @@ class DocumentIndexer:
             txt_files = txt_files[:max_docs]
             print(f"Limited to {max_docs} documents")
         
-        print(f"Indexing {len(txt_files)} documents...")
+        print(f"Indexing {len(txt_files)} documents (parallel={parallel})...")
         
         stats = {
             "total_docs": len(txt_files),
@@ -150,25 +191,49 @@ class DocumentIndexer:
             "failed": 0,
         }
         
-        for filepath in txt_files:
-            try:
-                chunks_inserted = self.index_document(filepath)
-                stats["total_chunks"] += chunks_inserted
-                stats["successful"] += 1
-            except Exception as e:
-                print(f"Failed to index {filepath.name}: {e}")
-                stats["failed"] += 1
+        if parallel and len(txt_files) > 1:
+            # Parallel processing
+            max_workers = min(os.cpu_count() or 4, len(txt_files))
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(self._index_document_worker, str(fp)): fp for fp in txt_files}
                 
+                for future in as_completed(futures):
+                    filepath = futures[future]
+                    try:
+                        chunks_inserted = future.result()
+                        stats["total_chunks"] += chunks_inserted
+                        stats["successful"] += 1
+                    except Exception as e:
+                        print(f"Failed to index {filepath.name}: {e}")
+                        stats["failed"] += 1
+        else:
+            # Sequential processing
+            for filepath in txt_files:
+                try:
+                    chunks_inserted = self.index_document(filepath)
+                    stats["total_chunks"] += chunks_inserted
+                    stats["successful"] += 1
+                except Exception as e:
+                    print(f"Failed to index {filepath.name}: {e}")
+                    stats["failed"] += 1
+                    
         return stats
+    
+    @staticmethod
+    def _index_document_worker(filepath_str: str) -> int:
+        """Worker function for parallel processing."""
+        # Each worker needs its own indexer instance
+        indexer = DocumentIndexer()
+        return indexer.index_document(Path(filepath_str))
     
     def clear_index(self):
         """Clear all data from the index."""
         conn = self._get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM document_chunks")
+        cursor.execute("TRUNCATE TABLE document_chunks")
         conn.commit()
         cursor.close()
-        conn.close()
+        self._return_db_connection(conn)
         print("Index cleared")
 
 

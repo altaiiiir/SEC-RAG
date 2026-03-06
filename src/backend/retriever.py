@@ -1,8 +1,54 @@
 from typing import List, Dict, Optional
 import psycopg2
+from psycopg2 import pool
 from sentence_transformers import SentenceTransformer
+from functools import lru_cache
+import time
 
 from src.backend.db_config import get_db_config, get_embedding_model_name
+
+# Global connection pool
+_connection_pool = None
+
+def get_connection_pool():
+    """Get or create connection pool."""
+    global _connection_pool
+    if _connection_pool is None:
+        db_config = get_db_config()
+        _connection_pool = pool.ThreadedConnectionPool(
+            minconn=2,
+            maxconn=20,
+            **db_config
+        )
+    return _connection_pool
+
+@lru_cache(maxsize=1)
+def get_embedding_model():
+    """Get cached embedding model."""
+    model_name = get_embedding_model_name()
+    return SentenceTransformer(model_name)
+
+# Simple query cache
+_query_cache = {}
+_cache_ttl = 300  # 5 minutes
+
+def get_cached_query(cache_key: str):
+    """Get cached query result if not expired."""
+    if cache_key in _query_cache:
+        result, timestamp = _query_cache[cache_key]
+        if time.time() - timestamp < _cache_ttl:
+            return result
+        else:
+            del _query_cache[cache_key]
+    return None
+
+def cache_query(cache_key: str, result):
+    """Cache query result."""
+    _query_cache[cache_key] = (result, time.time())
+    # Limit cache size
+    if len(_query_cache) > 100:
+        oldest = min(_query_cache.keys(), key=lambda k: _query_cache[k][1])
+        del _query_cache[oldest]
 
 class SearchResult:
     """A single search result with metadata."""
@@ -37,11 +83,16 @@ class DocumentRetriever:
     def __init__(self):
         self.db_config = get_db_config()
         self.embedding_model_name = get_embedding_model_name()
-        self.model = SentenceTransformer(self.embedding_model_name)
+        self.model = get_embedding_model()
+        self.pool = get_connection_pool()
     
     def _get_db_connection(self):
-        """Create database connection."""
-        return psycopg2.connect(**self.db_config)
+        """Get database connection from pool."""
+        return self.pool.getconn()
+    
+    def _return_db_connection(self, conn):
+        """Return connection to pool."""
+        self.pool.putconn(conn)
     
     def search(
         self,
@@ -50,7 +101,13 @@ class DocumentRetriever:
         ticker: Optional[str] = None,
         filing_type: Optional[str] = None,
     ) -> List[SearchResult]:
-        """Search for relevant chunks using vector similarity."""
+        """Search for relevant chunks with caching."""
+        
+        # Check cache
+        cache_key = f"{query}:{top_k}:{ticker}:{filing_type}"
+        cached = get_cached_query(cache_key)
+        if cached is not None:
+            return cached
         
         # Generate query embedding
         query_embedding = self.model.encode(query)
@@ -79,15 +136,16 @@ class DocumentRetriever:
         # Execute query
         conn = self._get_db_connection()
         cursor = conn.cursor()
-        cursor.execute(sql, params)
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
+        try:
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+        finally:
+            cursor.close()
+            self._return_db_connection(conn)
         
         # Convert to SearchResult objects
-        results = []
-        for row in rows:
-            result = SearchResult(
+        results = [
+            SearchResult(
                 chunk_id=row[0],
                 doc_id=row[1],
                 ticker=row[2],
@@ -97,44 +155,49 @@ class DocumentRetriever:
                 content=row[6],
                 similarity=float(row[7]),
             )
-            results.append(result)
+            for row in rows
+        ]
+        
+        # Cache results
+        cache_query(cache_key, results)
         
         return results
     
     def get_stats(self) -> Dict:
-        """Get database statistics."""
+        """Get database statistics with optimized single query."""
         conn = self._get_db_connection()
         cursor = conn.cursor()
         
-        # Total chunks
-        cursor.execute("SELECT COUNT(*) FROM document_chunks")
-        total_chunks = cursor.fetchone()[0]
-        
-        # Unique documents
-        cursor.execute("SELECT COUNT(DISTINCT doc_id) FROM document_chunks")
-        total_docs = cursor.fetchone()[0]
-        
-        # Unique tickers
-        cursor.execute("SELECT COUNT(DISTINCT ticker) FROM document_chunks")
-        total_tickers = cursor.fetchone()[0]
-        
-        # Documents by filing type
-        cursor.execute("""
-            SELECT filing_type, COUNT(DISTINCT doc_id) 
-            FROM document_chunks 
-            GROUP BY filing_type
-        """)
-        by_type = {row[0]: row[1] for row in cursor.fetchall()}
-        
-        cursor.close()
-        conn.close()
-        
-        return {
-            "total_chunks": total_chunks,
-            "total_documents": total_docs,
-            "total_tickers": total_tickers,
-            "by_filing_type": by_type,
-        }
+        try:
+            # Single optimized query for all stats
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total_chunks,
+                    COUNT(DISTINCT doc_id) as total_docs,
+                    COUNT(DISTINCT ticker) as total_tickers,
+                    json_object_agg(filing_type, doc_count) as by_filing_type
+                FROM (
+                    SELECT 
+                        doc_id, 
+                        ticker, 
+                        filing_type,
+                        COUNT(*) OVER (PARTITION BY filing_type) as doc_count
+                    FROM document_chunks
+                    GROUP BY doc_id, ticker, filing_type
+                ) subq
+            """)
+            
+            row = cursor.fetchone()
+            
+            return {
+                "total_chunks": row[0] or 0,
+                "total_documents": row[1] or 0,
+                "total_tickers": row[2] or 0,
+                "by_filing_type": row[3] or {},
+            }
+        finally:
+            cursor.close()
+            self._return_db_connection(conn)
 
 
 if __name__ == "__main__":
