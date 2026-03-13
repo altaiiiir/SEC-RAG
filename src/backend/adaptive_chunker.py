@@ -113,7 +113,9 @@ class SECChunker:
                 chunk_text = self._snap_to_sentence(chunk_text)
 
             chunk_text = chunk_text.strip()
-            token_count = len(self.tokenizer.encode(chunk_text))
+            # Use slice length as token count (upper bound; snapping only shortens the text).
+            # Avoids an extra encode() call per chunk.
+            token_count = end - start
 
             if chunk_text and token_count >= self.min_chunk_size:
                 chunks.append({

@@ -81,10 +81,29 @@ Services:
 
 ### 4. Index Documents
 
+**Option A — Use a snapshot (fast, no GPU needed)**
+
+If someone has already indexed the corpus and shared a `.dump` file, just run:
+
+```bash
+make restore f=snapshots/corpus.dump
+```
+
+Done — the full vector DB is loaded in seconds.
+
+**Option B — Index from scratch**
+
 First time only (takes 10-20 minutes):
 
 ```bash
 make index
+```
+
+After indexing, save a snapshot to share with others:
+
+```bash
+make snapshot
+# → saves to snapshots/corpus.dump
 ```
 
 ### 5. Ollama Model
@@ -119,6 +138,8 @@ make test         # Run unit tests
 make clean        # Remove everything
 make pull-model   # Pull Ollama model
 make check-ollama # Check Ollama models
+make snapshot     # Dump indexed DB to snapshots/
+make restore f=… # Restore DB from a .dump file
 ```
 
 ## Usage
@@ -226,6 +247,13 @@ Chunking is adaptive: narrative text uses a token-based sliding window with sent
 - `ENABLE_SENTENCE_BOUNDARIES`: Snap narrative chunks to sentence ends (default: true)
 - `TABLE_ROW_CHUNK_SIZE`: Rows per table chunk when splitting large tables (default: 15)
 - `EMBEDDING_MODEL`: Embedding model (default: all-MiniLM-L6-v2)
+
+### Indexing performance
+
+- `EMBED_BATCH_SIZE`: Chunks per `model.encode()` call (default: 256). Increase to 512 if you have a GPU.
+- `EMBED_BATCH_FILES`: Files whose chunks are pooled into one embedding call (default: 8). Higher = fewer model calls, more RAM.
+
+The indexer uses thread-parallel parsing/chunking and a single bulk duplicate check, so restarting `make index` after an interruption is safe and fast — already-indexed documents are skipped in one DB query.
 
 ## Testing
 

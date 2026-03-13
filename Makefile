@@ -1,4 +1,4 @@
-.PHONY: help setup start stop restart logs clean index health stats shell build reset test test-cov ensure-env pull-model check-ollama clear-db
+.PHONY: help setup start stop restart logs clean index health stats shell build reset test test-cov ensure-env pull-model check-ollama clear-db snapshot restore
 
 # Load environment variables from .env if it exists
 ifneq (,$(wildcard .env))
@@ -25,10 +25,14 @@ help:
 	@echo "  make restart   - Restart all services"
 	@echo ""
 	@echo "Indexing:"
-	@echo "  make index     - Index all documents"
-	@echo "  make index n=5 - Index only 5 documents (for testing)"
-	@echo "  make clear     - Clear all indexed data"
-	@echo "  make clear-db  - Drop all data and schema from database"
+	@echo "  make index        - Index all documents"
+	@echo "  make index n=5    - Index only 5 documents (for testing)"
+	@echo "  make clear        - Clear all indexed data"
+	@echo "  make clear-db     - Drop all data and schema from database"
+	@echo ""
+	@echo "Snapshots (share a pre-indexed corpus without re-indexing):"
+	@echo "  make snapshot     - Dump indexed DB to snapshots/ directory"
+	@echo "  make restore f=snapshots/corpus.dump - Restore from a dump file"
 	@echo ""
 	@echo "Status:"
 	@echo "  make health       - Check API health"
@@ -155,4 +159,18 @@ pull-model:
 check-ollama:
 	@echo "Installed Ollama models:"
 	@docker exec edgar_ollama ollama list
+
+# Snapshot: dump the fully-indexed postgres DB to a portable binary file.
+# Share the .dump file so others can run make restore instead of make index.
+snapshot:
+	@docker run --rm -v "$(CURDIR):/w" -w /w alpine mkdir -p snapshots
+	@docker-compose exec -T postgres pg_dump -U $(POSTGRES_USER) -Fc $(POSTGRES_DB) > snapshots/corpus.dump
+	@echo "Snapshot saved to snapshots/corpus.dump"
+
+# Restore: load a snapshot into the running postgres container.
+# Usage: make restore f=snapshots/corpus.dump
+restore:
+	@docker run --rm -v "$(CURDIR):/w" alpine sh -c 'test -n "$(f)" || (echo "Usage: make restore f=snapshots/corpus.dump" && exit 1)'
+	@docker-compose exec -T postgres pg_restore -U $(POSTGRES_USER) -d $(POSTGRES_DB) --clean --if-exists < $(f)
+	@echo "Restored from $(f)"
 
