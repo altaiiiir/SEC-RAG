@@ -1,4 +1,4 @@
-.PHONY: help setup start stop restart logs clean index health stats shell build reset test test-cov pull-model check-ollama clear-db
+.PHONY: help setup start stop restart logs clean index health stats shell build reset test test-cov ensure-env pull-model check-ollama clear-db
 
 # Load environment variables from .env if it exists
 ifneq (,$(wildcard .env))
@@ -36,10 +36,9 @@ help:
 	@echo "  make logs         - View logs from all services"
 	@echo "  make check-ollama - Check Ollama models"
 	@echo ""
-	@echo "Testing:"
-	@echo "  make test      - Run unit tests"
+	@echo "Testing (Docker only; no venv or running API required):"
+	@echo "  make test      - Run tests in Docker (starts postgres + test container)"
 	@echo "  make test-cov  - Run tests with coverage"
-	@echo "  make evaluate  - Evaluate chunking strategies"
 	@echo ""
 	@echo "Development:"
 	@echo "  make shell       - Open shell in API container"
@@ -110,15 +109,19 @@ health:
 stats:
 	@curl -s http://$(API_HOST):$(API_PORT)/stats | python -m json.tool
 
-# Run tests
-test:
-	@echo "Running unit tests..."
-	docker-compose exec api pytest tests/ -v
+# Ensure .env exists (no Python required; uses Docker). Safe to run every time.
+ensure-env:
+	@docker run --rm -v "$(CURDIR):/w" -w /w alpine sh -c "cp -n .env.example .env 2>/dev/null || true"
+
+# Run tests in Docker: starts postgres + test container (no venv or running API needed)
+test: ensure-env
+	@echo "Running tests (Docker: postgres + test runner)..."
+	docker-compose --profile test run --rm test
 
 # Run tests with coverage
-test-cov:
+test-cov: ensure-env
 	@echo "Running tests with coverage..."
-	docker-compose exec api pytest tests/ -v --cov=src --cov-report=term-missing
+	docker-compose --profile test run --rm test pytest tests/ -v --cov=src --cov-report=term-missing
 
 # Open shell
 shell:
@@ -153,8 +156,3 @@ check-ollama:
 	@echo "Installed Ollama models:"
 	@docker exec edgar_ollama ollama list
 
-# Evaluate chunking
-evaluate:
-	@echo "Evaluating chunking strategies..."
-	@docker-compose exec api python -m src.backend.evaluate_chunking
-	@echo "Evaluation complete!"

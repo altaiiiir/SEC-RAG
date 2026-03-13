@@ -77,6 +77,26 @@ services:
       - api
     command: streamlit run src/frontend/Chat.py --server.port 8501 --server.address 0.0.0.0
 
+  # Test runner: starts postgres only, runs pytest. No API/Ollama/Streamlit needed.
+  test:
+    build: .
+    container_name: edgar_test
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      PYTHONPATH: /app
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./prompts:/app/prompts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: pytest tests/ -v
+    profiles:
+      - test
+
 volumes:
   postgres_data:
   model_cache:

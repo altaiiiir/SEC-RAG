@@ -12,7 +12,7 @@ make index
 
 **Access:**
 
-- **Chat UI**: http://localhost:8501 (Ask questions, get AI answers)
+- **Chat UI**: http://localhost:8501
 - **Debug View**: http://localhost:8501/RAG_Debug (Raw search results)
 - **API Docs**: http://localhost:8000/docs
 
@@ -55,9 +55,19 @@ AI-Generated Answer + Evidence
 
 ### 1. Install Docker
 
-Download from [docker.com](https://www.docker.com/get-started)
+Download from [docker.com](https://www.docker.com/get-started). Ensure Docker Compose is available (included with Docker Desktop).
 
-### 2. Start Services
+### 2. Create environment
+
+From the project root:
+
+```bash
+make setup
+```
+
+This creates a `.env` file from `.env.example` (required before starting services).
+
+### 3. Start Services
 
 ```bash
 make start
@@ -69,7 +79,7 @@ Services:
 - Streamlit UI (port 8501)
 - Ollama LLM service (port 11434)
 
-### 3. Index Documents
+### 4. Index Documents
 
 First time only (takes 10-20 minutes):
 
@@ -77,7 +87,7 @@ First time only (takes 10-20 minutes):
 make index
 ```
 
-### 4. Ollama Model
+### 5. Ollama Model
 
 The Ollama model (qwen3.5:4b) downloads automatically on first use.
 
@@ -106,7 +116,6 @@ make logs         # View logs
 make health       # Check API health
 make stats        # Database statistics
 make test         # Run unit tests
-make evaluate     # Evaluate chunking strategies
 make clean        # Remove everything
 make pull-model   # Pull Ollama model
 make check-ollama # Check Ollama models
@@ -175,10 +184,9 @@ SEC-RAG/
 │   │   ├── llm.py               # Ollama LLM client
 │   │   ├── api.py               # FastAPI backend
 │   │   ├── db_config.py         # Database configuration
-│   │   ├── chunking_config.py   # Chunking hyperparameters (NEW)
-│   │   ├── content_detector.py  # Content type detection (NEW)
-│   │   ├── adaptive_chunker.py  # Adaptive chunking logic (NEW)
-│   │   └── evaluate_chunking.py # Chunking evaluation (NEW)
+│   │   ├── chunking_config.py   # Chunking hyperparameters
+│   │   ├── content_detector.py  # Section + table/list detection
+│   │   └── adaptive_chunker.py  # Token/sentence + structure-aware chunking
 │   └── frontend/
 │       ├── Chat.py              # Streamlit chat UI
 │       ├── utils.py             # Shared utilities
@@ -191,7 +199,6 @@ SEC-RAG/
 ├── Dockerfile
 ├── init.sql                     # Database schema
 ├── Makefile
-├── CHUNKING_EXPERIMENTS.md      # Experiment log (NEW)
 └── pyproject.toml               # UV dependencies
 ```
 
@@ -209,49 +216,28 @@ Key settings:
 - `OLLAMA_PORT`: Ollama port (default: 11434)
 - `CHUNK_SIZE`: Tokens per chunk (default: 512)
 
-### Adaptive Chunking (NEW)
+### Chunking
 
-The system now uses content-aware chunking that adapts to different document structures:
+Chunking is adaptive: narrative text uses a token-based sliding window with sentence-boundary snapping; tables and lists are detected and kept intact (tables split by row groups when large).
 
-**Content Types:**
-- **Tables**: Split by row groups, preserving headers
-- **Lists**: Keep related items together with context
-- **Financial Statements**: Treat as semantic units
-- **Narrative**: Fixed-size with sentence boundaries
-
-**Configuration:**
-```bash
-ENABLE_ADAPTIVE_CHUNKING=true   # Enable/disable adaptive chunking
-CHUNK_SIZE=512                   # Base chunk size in tokens
-CHUNK_OVERLAP=50                 # Token overlap between chunks
-MIN_CHUNK_SIZE=100              # Minimum chunk size
-TABLE_ROW_CHUNK_SIZE=5          # Rows per table chunk
-ENABLE_SENTENCE_BOUNDARIES=true  # Snap to sentence ends
-ENABLE_TABLE_DETECTION=true      # Detect and preserve tables
-ENABLE_LIST_DETECTION=true       # Detect and preserve lists
-```
-
-**Benefits:**
-- Tables remain intact with headers preserved
-- Financial data stays together for better context
-- Lists maintain parent context across chunks
-- No mid-sentence splits in narrative text
-
-**Evaluation:**
-```bash
-make evaluate  # Compare chunking strategies
-```
-
-See `CHUNKING_EXPERIMENTS.md` for detailed experiment tracking.
-- `CHUNK_OVERLAP`: Chunk overlap (default: 50)
-- `EMBEDDING_MODEL`: Model (default: all-MiniLM-L6-v2)
+- `CHUNK_SIZE`: Tokens per chunk (default: 512)
+- `CHUNK_OVERLAP`: Overlap between chunks (default: 50)
+- `MIN_CHUNK_SIZE`: Minimum chunk size in tokens (default: 100)
+- `ENABLE_SENTENCE_BOUNDARIES`: Snap narrative chunks to sentence ends (default: true)
+- `TABLE_ROW_CHUNK_SIZE`: Rows per table chunk when splitting large tables (default: 15)
+- `EMBEDDING_MODEL`: Embedding model (default: all-MiniLM-L6-v2)
 
 ## Testing
 
+Tests run entirely in Docker. You don't need a local venv or a running API—`make test` starts a temporary postgres and runs pytest in a container.
+
 ```bash
-make test       # Run tests
-make test-cov   # With coverage
+make test       # Run tests (builds image if needed, starts postgres, runs pytest)
+make test-cov   # Same, with coverage report
 ```
+
+- **Unit tests** run in an isolated test container with postgres; no API, Ollama, or Streamlit are started.
+- For **integration tests** (e.g. hitting the live API), add tests marked `@pytest.mark.integration` and run them when the full stack is up, or add a separate `make test-integration` target later.
 
 ## Troubleshooting
 

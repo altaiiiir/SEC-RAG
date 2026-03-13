@@ -33,7 +33,7 @@ Answer:
 **Why Basic**:
 The initial implementation prioritized infrastructure over prompt engineering:
 1. **Foundation First**: Needed to validate the RAG pipeline (indexing → retrieval → generation) worked end-to-end
-2. **Chunking Optimization**: Primary focus was on experimenting with chunking strategies (see `CHUNKING_EXPERIMENTS.md`) to ensure high-quality context retrieval
+2. **Chunking Optimization**: Adaptive chunking (token/sentence for narrative; structure-aware for tables and lists) to ensure high-quality context retrieval
 3. **Embedding Quality**: Wanted to optimize semantic search before tuning LLM output
 4. **Avoiding Premature Optimization**: Prompt engineering is powerful but can mask underlying retrieval issues - by keeping it basic, we could identify real problems in the pipeline
 5. **Strategic Sequencing**: Intentionally saved prompt optimization for last as it's the "easiest" lever to pull and most forgiving to iterate on

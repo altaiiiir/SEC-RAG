@@ -14,20 +14,34 @@ import re
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
+def _mock_psycopg2():
+    """Return a Mock that has psycopg2.extras.execute_batch and psycopg2.pool for imports."""
+    m = Mock()
+    m.pool = Mock()
+    m.extras = Mock()
+    m.extras.execute_batch = Mock()
+    return m
+
+
+def _indexer_mocks():
+    """Common sys.modules mocks for tests that import DocumentIndexer."""
+    return {
+        "psycopg2": _mock_psycopg2(),
+        "psycopg2.pool": Mock(),
+        "psycopg2.extras": Mock(),
+        "sentence_transformers": Mock(),
+        "tiktoken": Mock(),
+        "concurrent": Mock(),
+        "concurrent.futures": Mock(),
+    }
+
+
 class TestFilenameParser:
     """Tests for filename parsing logic."""
     
     def test_parse_filename_standard(self):
         """Test parsing standard filename format."""
-        with patch.dict('sys.modules', {
-            'psycopg2': Mock(),
-            'sentence_transformers': Mock(),
-            'tiktoken': Mock(),
-            'concurrent': Mock(),
-            'concurrent.futures': Mock(),
-            'concurrent': Mock(),
-            'concurrent.futures': Mock(),
-        }):
+        with patch.dict('sys.modules', _indexer_mocks()):
             from src.backend.indexer import DocumentIndexer
             indexer = DocumentIndexer()
             metadata = indexer._parse_filename("AAPL_10K_2024Q3_2024-11-01_full.txt")
@@ -39,15 +53,7 @@ class TestFilenameParser:
     
     def test_parse_filename_no_quarter(self):
         """Test parsing filename without quarter."""
-        with patch.dict('sys.modules', {
-            'psycopg2': Mock(),
-            'psycopg2.pool': Mock(),
-            'psycopg2.extras': Mock(),
-            'sentence_transformers': Mock(),
-            'tiktoken': Mock(),
-            'concurrent': Mock(),
-            'concurrent.futures': Mock(),
-        }):
+        with patch.dict('sys.modules', _indexer_mocks()):
             from src.backend.indexer import DocumentIndexer
             indexer = DocumentIndexer()
             metadata = indexer._parse_filename("TSLA_10K_2026-01-29_full.txt")
@@ -59,15 +65,7 @@ class TestFilenameParser:
     
     def test_parse_filename_variations(self):
         """Test parsing various filename formats."""
-        with patch.dict('sys.modules', {
-            'psycopg2': Mock(),
-            'psycopg2.pool': Mock(),
-            'psycopg2.extras': Mock(),
-            'sentence_transformers': Mock(),
-            'tiktoken': Mock(),
-            'concurrent': Mock(),
-            'concurrent.futures': Mock(),
-        }):
+        with patch.dict('sys.modules', _indexer_mocks()):
             from src.backend.indexer import DocumentIndexer
             indexer = DocumentIndexer()
             
@@ -147,11 +145,7 @@ class TestDatabaseOperations:
             'POSTGRES_PORT': '5433',
             'POSTGRES_DB': 'testdb',
         }):
-            with patch.dict('sys.modules', {
-                'psycopg2': Mock(),
-                'sentence_transformers': Mock(),
-                'tiktoken': Mock(),
-            }):
+            with patch.dict('sys.modules', _indexer_mocks()):
                 from src.backend.indexer import DocumentIndexer
                 indexer = DocumentIndexer()
                 
@@ -162,15 +156,7 @@ class TestDatabaseOperations:
     def test_db_config_defaults(self):
         """Test database config uses defaults when not in Docker."""
         # In Docker, host defaults to 'postgres', locally to 'localhost'
-        with patch.dict('sys.modules', {
-            'psycopg2': Mock(),
-            'psycopg2.pool': Mock(),
-            'psycopg2.extras': Mock(),
-            'sentence_transformers': Mock(),
-            'tiktoken': Mock(),
-            'concurrent': Mock(),
-            'concurrent.futures': Mock(),
-        }):
+        with patch.dict('sys.modules', _indexer_mocks()):
             from src.backend.indexer import DocumentIndexer
             indexer = DocumentIndexer()
             
@@ -207,26 +193,16 @@ class TestConstants:
     def test_chunk_size_config(self):
         """Test chunk size configuration."""
         with patch.dict('os.environ', {'CHUNK_SIZE': '1024'}):
-            with patch.dict('sys.modules', {
-                'psycopg2': Mock(),
-                'sentence_transformers': Mock(),
-                'tiktoken': Mock(),
-            }):
-                from src.backend.indexer import DocumentIndexer
-                indexer = DocumentIndexer()
-                assert indexer.chunk_size == 1024
+            from src.backend.chunking_config import get_chunking_config
+            config = get_chunking_config()
+            assert config["chunk_size"] == 1024
     
     def test_chunk_overlap_config(self):
         """Test chunk overlap configuration."""
         with patch.dict('os.environ', {'CHUNK_OVERLAP': '100'}):
-            with patch.dict('sys.modules', {
-                'psycopg2': Mock(),
-                'sentence_transformers': Mock(),
-                'tiktoken': Mock(),
-            }):
-                from src.backend.indexer import DocumentIndexer
-                indexer = DocumentIndexer()
-                assert indexer.chunk_overlap == 100
+            from src.backend.chunking_config import get_chunking_config
+            config = get_chunking_config()
+            assert config["chunk_overlap"] == 100
 
 
 class TestOllamaClient:

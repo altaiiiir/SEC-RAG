@@ -13,6 +13,8 @@ RUN uv pip install --system -r pyproject.toml
 
 # Copy application code
 COPY src/ ./src/
+COPY tests/ ./tests/
+COPY prompts/ ./prompts/
 COPY edgar_corpus/ ./edgar_corpus/
 
 # Expose ports
