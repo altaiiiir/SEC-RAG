@@ -39,12 +39,22 @@ class SECChunker:
 
             total = len(section_chunks)
             for i, chunk in enumerate(section_chunks):
-                chunk["section_name"] = section.name
+                chunk["section_name"] = self._clean_section_name(section.name)
                 chunk["section_chunk_index"] = i
                 chunk["total_section_chunks"] = total
             all_chunks.extend(section_chunks)
 
         return all_chunks
+    
+    def _clean_section_name(self, raw_name: str) -> str:
+        """Extract meaningful part from 'Item 1A. | Risk Factors | 5' -> 'Risk Factors'"""
+        if '|' in raw_name:
+            parts = [p.strip() for p in raw_name.split('|')]
+            # Return middle part if exists and not empty, else first part
+            if len(parts) > 1 and parts[1]:
+                return parts[1]
+            return parts[0]
+        return raw_name
 
     def _chunk_table(self, block: ContentBlock) -> List[Dict]:
         """Split table into row-group chunks; keep header on first chunk, repeat if splitting."""
@@ -54,28 +64,44 @@ class SECChunker:
 
         header = rows[0]
         data_rows = rows[1:] if len(rows) > 1 else []
-        chunk_texts: List[str] = []
+        
+        # Generate unique table ID for this table
+        import time
+        table_id = f"table_{int(time.time() * 1000000) % 1000000}"
 
         if not data_rows:
-            chunk_texts = [block.text]
-        else:
-            step = self.table_row_chunk_size
-            for start in range(0, len(data_rows), step):
-                end = min(start + step, len(data_rows))
-                group = [header] + data_rows[start:end]
-                chunk_texts.append("\n".join(group))
-
+            # Single chunk table (header only or very small)
+            chunks = []
+            part = block.text.strip()
+            if part:
+                token_count = len(self.tokenizer.encode(part))
+                chunks.append({
+                    "text": part,
+                    "chunk_type": "table",
+                    "token_count": token_count,
+                    "table_id": table_id,
+                    "row_range": "1-1 of 1",
+                })
+            return chunks
+        
+        # Multi-chunk table
         chunks = []
-        for part in chunk_texts:
-            part = part.strip()
-            if not part:
-                continue
-            token_count = len(self.tokenizer.encode(part))
-            chunks.append({
-                "text": part,
-                "chunk_type": "table",
-                "token_count": token_count,
-            })
+        step = self.table_row_chunk_size
+        for start in range(0, len(data_rows), step):
+            end = min(start + step, len(data_rows))
+            group = [header] + data_rows[start:end]
+            part = "\n".join(group).strip()
+            
+            if part:
+                token_count = len(self.tokenizer.encode(part))
+                chunks.append({
+                    "text": part,
+                    "chunk_type": "table",
+                    "token_count": token_count,
+                    "table_id": table_id,
+                    "row_range": f"{start+1}-{end} of {len(data_rows)}",
+                })
+        
         return chunks
 
     def _chunk_list(self, block: ContentBlock) -> List[Dict]:

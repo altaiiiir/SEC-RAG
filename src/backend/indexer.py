@@ -105,8 +105,8 @@ class DocumentIndexer:
                     INSERT INTO document_chunks
                     (doc_id, ticker, filing_type, filing_date, quarter,
                      chunk_index, content, embedding, chunk_type, section_name,
-                     table_id, row_range, page_estimate)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     table_id, row_range)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     """,
                     records,
                     page_size=500,
@@ -154,7 +154,8 @@ class DocumentIndexer:
                 emb.tolist(),
                 c.get("chunk_type", "narrative"),
                 c.get("section_name", ""),
-                None, None, None,
+                c.get("table_id"),
+                c.get("row_range"),
             )
             for idx, (c, emb) in enumerate(zip(chunk_dicts, embeddings))
         ]
@@ -259,7 +260,8 @@ class DocumentIndexer:
                         emb.tolist(),
                         chunk.get("chunk_type", "narrative"),
                         chunk.get("section_name", ""),
-                        None, None, None,
+                        chunk.get("table_id"),
+                        chunk.get("row_range"),
                     ))
 
             inserted = self._insert_batch(records)

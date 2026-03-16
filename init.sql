@@ -25,7 +25,6 @@ CREATE TABLE document_chunks (
     section_name TEXT,
     table_id TEXT,
     row_range TEXT,
-    page_estimate INT,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
