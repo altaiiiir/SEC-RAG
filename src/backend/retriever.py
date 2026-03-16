@@ -109,13 +109,30 @@ class DocumentRetriever:
         query: str,
         top_k: int = 5,
         ticker: Optional[str] = None,
+        tickers: Optional[List[str]] = None,
         filing_type: Optional[str] = None,
         chunk_type: Optional[str] = None,
+        section_name: Optional[str] = None,
     ) -> List[SearchResult]:
-        """Search for relevant chunks with caching."""
+        """
+        Search for relevant chunks with caching.
         
-        # Check cache
-        cache_key = f"{query}:{top_k}:{ticker}:{filing_type}:{chunk_type}"
+        Args:
+            query: Search query text
+            top_k: Number of results to return
+            ticker: Single ticker filter (legacy, use tickers for multi-company)
+            tickers: List of tickers for multi-company queries
+            filing_type: Filter by filing type (10-K, 10-Q, etc.)
+            chunk_type: Filter by chunk type (table, narrative, list)
+            section_name: Filter by section name (Risk Factors, Business, etc.)
+            
+        Returns:
+            List of SearchResult objects
+        """
+        
+        # Build cache key
+        ticker_key = ticker or (tuple(sorted(tickers)) if tickers else None)
+        cache_key = f"{query}:{top_k}:{ticker_key}:{filing_type}:{chunk_type}:{section_name}"
         cached = get_cached_query(cache_key)
         if cached is not None:
             return cached
@@ -134,7 +151,12 @@ class DocumentRetriever:
         """
         params = [query_embedding.tolist()]
         
-        if ticker:
+        # Handle multi-ticker queries (takes precedence over single ticker)
+        if tickers:
+            placeholders = ','.join(['%s'] * len(tickers))
+            sql += f" AND ticker IN ({placeholders})"
+            params.extend(tickers)
+        elif ticker:
             sql += " AND ticker = %s"
             params.append(ticker)
             
@@ -145,6 +167,11 @@ class DocumentRetriever:
         if chunk_type:
             sql += " AND chunk_type = %s"
             params.append(chunk_type)
+        
+        if section_name:
+            # Use ILIKE for case-insensitive partial matching
+            sql += " AND section_name ILIKE %s"
+            params.append(f"%{section_name}%")
         
         sql += " ORDER BY embedding <=> %s::vector LIMIT %s"
         params.extend([query_embedding.tolist(), top_k])

@@ -20,7 +20,7 @@ CREATE TABLE document_chunks (
     quarter TEXT,
     chunk_index INT NOT NULL,
     content TEXT NOT NULL,
-    embedding vector(384),
+    embedding vector(1024),  -- Updated from 384 to 1024 for bge-large-en-v1.5
     chunk_type TEXT,
     section_name TEXT,
     table_id TEXT,

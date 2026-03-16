@@ -10,19 +10,23 @@ from contextlib import asynccontextmanager
 from src.backend.indexer import DocumentIndexer
 from src.backend.retriever import DocumentRetriever
 from src.backend.llm import OllamaClient
+from src.backend.query_parser import parse_query, suggest_top_k
+from src.backend.reranker import Reranker
 
 indexer = None
 retriever = None
 llm_client = None
+reranker = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize components on startup."""
-    global indexer, retriever, llm_client
+    global indexer, retriever, llm_client, reranker
     indexer = DocumentIndexer()
     retriever = DocumentRetriever()
     llm_client = OllamaClient()
+    reranker = Reranker()
     yield
 
 
@@ -139,21 +143,46 @@ async def clear_index():
 async def ask(request: QueryRequest):
     """Ask a question and get an LLM-generated answer with evidence."""
     try:
+        # Parse query to extract tickers and section hints
+        parsed = parse_query(request.query)
+        
+        # Determine retrieval parameters
+        tickers = parsed.get('tickers') if parsed.get('tickers') else None
+        section_hint = parsed.get('section_hint')
+        
+        # Override with user-provided filters if specified
+        if request.ticker:
+            tickers = [request.ticker]
+        
+        # Adjust top_k for multi-company queries (retrieve more for reranking)
+        initial_top_k = suggest_top_k(parsed, default=request.top_k) * 4  # Get 4x for reranking
+        initial_top_k = min(initial_top_k, 50)  # Cap at 50
+        
+        # Stage 1: Initial retrieval with embedding search
         results = retriever.search(
             query=request.query,
-            top_k=request.top_k,
-            ticker=request.ticker,
+            top_k=initial_top_k,
+            tickers=tickers,
             filing_type=request.filing_type,
-            chunk_type=request.chunk_type
+            chunk_type=request.chunk_type,
+            section_name=section_hint
         )
         
         if not results:
             raise HTTPException(status_code=404, detail="No relevant documents found")
         
-        context = "\n\n---\n\n".join([
-            f"Company: {r.ticker}, Filing: {r.filing_type}, Date: {r.filing_date}\n{r.content}"
-            for r in results
-        ])
+        # Stage 2: Rerank to get best results
+        final_results = reranker.rerank(request.query, results, top_k=request.top_k)
+        
+        # Build context with enhanced metadata
+        context_parts = []
+        for r in final_results:
+            meta = f"Company: {r.ticker}, Filing: {r.filing_type}, Date: {r.filing_date}"
+            if r.section_name:
+                meta += f", Section: {r.section_name}"
+            context_parts.append(f"{meta}\n{r.content}")
+        
+        context = "\n\n---\n\n".join(context_parts)
         
         prompt = llm_client.format_prompt(context=context, query=request.query)
         
@@ -168,7 +197,7 @@ async def ask(request: QueryRequest):
             'section_name': r.section_name,
             'table_id': r.table_id,
             'row_range': r.row_range
-        }).model_dump() for r in results]
+        }).model_dump() for r in final_results]
         
         async def generate_response():
             async for chunk in llm_client.generate_stream(prompt):
