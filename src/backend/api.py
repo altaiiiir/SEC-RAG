@@ -172,7 +172,8 @@ async def ask(request: QueryRequest):
             raise HTTPException(status_code=404, detail="No relevant documents found")
         
         # Stage 2: Rerank to get best results
-        final_results = reranker.rerank(request.query, results, top_k=request.top_k)
+        is_multi_company = tickers and len(tickers) > 1
+        final_results = reranker.rerank(request.query, results, top_k=request.top_k, ensure_diversity=is_multi_company)
         
         # Build context with enhanced metadata
         context_parts = []

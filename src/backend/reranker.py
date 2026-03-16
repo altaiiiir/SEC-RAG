@@ -30,7 +30,7 @@ class Reranker:
         """Initialize reranker with cross-encoder model."""
         self.model = get_reranker_model()
     
-    def rerank(self, query: str, results: List, top_k: int = 5) -> List:
+    def rerank(self, query: str, results: List, top_k: int = 5, ensure_diversity: bool = False) -> List:
         """
         Rerank search results using cross-encoder.
         
@@ -38,6 +38,7 @@ class Reranker:
             query: User query string
             results: List of SearchResult objects from initial retrieval
             top_k: Number of top results to return
+            ensure_diversity: If True and multiple tickers present, ensure balanced representation
             
         Returns:
             Reranked list of SearchResult objects
@@ -57,6 +58,35 @@ class Reranker:
         
         # Sort by reranker score (descending)
         ranked = sorted(zip(results, scores), key=lambda x: x[1], reverse=True)
+        
+        # If diversity is requested and we have multiple companies, ensure balanced representation
+        if ensure_diversity:
+            tickers = list(set([r.ticker for r, _ in ranked]))
+            if len(tickers) > 1:
+                # Use round-robin selection to ensure each company gets representation
+                final_results = []
+                per_company_k = max(top_k // len(tickers), 1)
+                
+                # Group by ticker
+                by_ticker = {}
+                for r, score in ranked:
+                    if r.ticker not in by_ticker:
+                        by_ticker[r.ticker] = []
+                    by_ticker[r.ticker].append((r, score))
+                
+                # Take top results from each company
+                for ticker in tickers:
+                    if ticker in by_ticker:
+                        company_results = by_ticker[ticker][:per_company_k]
+                        final_results.extend([r for r, _ in company_results])
+                
+                # If we haven't reached top_k, add more from top-scored overall
+                if len(final_results) < top_k:
+                    for r, _ in ranked:
+                        if r not in final_results and len(final_results) < top_k:
+                            final_results.append(r)
+                
+                return final_results[:top_k]
         
         # Return top_k results
         return [result for result, score in ranked[:top_k]]

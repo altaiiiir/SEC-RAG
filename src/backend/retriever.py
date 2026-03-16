@@ -137,6 +137,45 @@ class DocumentRetriever:
         if cached is not None:
             return cached
         
+        # For multi-company queries, retrieve results per company to ensure balanced representation
+        if tickers and len(tickers) > 1:
+            all_results = []
+            per_company_k = max(top_k // len(tickers), 5)  # At least 5 per company
+            
+            for single_ticker in tickers:
+                company_results = self._search_single(
+                    query=query,
+                    top_k=per_company_k,
+                    ticker=single_ticker,
+                    filing_type=filing_type,
+                    chunk_type=chunk_type,
+                    section_name=section_name
+                )
+                all_results.extend(company_results)
+            
+            # Sort by similarity and return top_k
+            all_results.sort(key=lambda x: x.similarity, reverse=True)
+            results = all_results[:top_k * 2]  # Return 2x for reranking
+            cache_query(cache_key, results)
+            return results
+        
+        # Single company or no ticker filter - use original logic
+        results = self._search_single(query, top_k, ticker or (tickers[0] if tickers else None), 
+                                     filing_type, chunk_type, section_name)
+        cache_query(cache_key, results)
+        return results
+    
+    def _search_single(
+        self,
+        query: str,
+        top_k: int,
+        ticker: Optional[str] = None,
+        filing_type: Optional[str] = None,
+        chunk_type: Optional[str] = None,
+        section_name: Optional[str] = None,
+    ) -> List[SearchResult]:
+        """Internal method to search with a single ticker or no ticker filter."""
+        
         # Generate query embedding
         query_embedding = self.model.encode(query)
         
@@ -151,12 +190,7 @@ class DocumentRetriever:
         """
         params = [query_embedding.tolist()]
         
-        # Handle multi-ticker queries (takes precedence over single ticker)
-        if tickers:
-            placeholders = ','.join(['%s'] * len(tickers))
-            sql += f" AND ticker IN ({placeholders})"
-            params.extend(tickers)
-        elif ticker:
+        if ticker:
             sql += " AND ticker = %s"
             params.append(ticker)
             
@@ -204,9 +238,6 @@ class DocumentRetriever:
             )
             for row in rows
         ]
-        
-        # Cache results
-        cache_query(cache_key, results)
         
         return results
     
